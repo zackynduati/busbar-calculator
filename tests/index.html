@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engine Tests</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; background: #fafaf8; color: #1d1c19; }
+    .pass { color: #1d7a46; } .fail { color: #b42318; font-weight: 600; }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+    li { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <h1>Busbar engine – verification checks</h1>
+  <p id="summary">Running…</p>
+  <ol id="out"></ol>
+  <script src="../js/busbar-engine.js"></script>
+  <script>
+  (function () {
+    var BC = window.BusbarCalc, out = document.getElementById('out'), results = [];
+    function check(name, actual, lo, hi) {
+      var ok = actual >= lo && actual <= hi;
+      results.push({ name: name, ok: ok, detail: 'got ' + (typeof actual === 'number' ? actual.toPrecision(5) : actual) + ', expected ' + lo + ' … ' + hi });
+    }
+    function truthy(name, cond, detail) { results.push({ name: name, ok: !!cond, detail: detail || '' }); }
+    function base(over) { return Object.assign({}, BC.DEFAULT_INPUTS, over || {}); }
+
+    // --- standards tables
+    check('Peak factor n for 55 kA (IEC 61439-1 Tab. 7)', BC.peakFactor(55).n, 2.2, 2.2);
+    check('Peak factor n for 15 kA', BC.peakFactor(15).n, 2.0, 2.0);
+    check('Min. clearance for 8 kV', BC.minClearance(8), 8, 8);
+
+    // --- adiabatic constants vs IEC 60949
+    var cu = BC.thermalShortCircuit(BC.MATERIALS.Cu, 1.7241e-8, 55, 1, 1000, 90, 250);
+    check('Cu K (IEC 60949: 226)', cu.K, 225, 227);
+    check('Cu k 90→250 °C (IEC: 143)', cu.k, 142, 144);
+    var al = BC.thermalShortCircuit(BC.MATERIALS.Al, 1.7241e-8 / 0.61, 55, 1, 1000, 90, 250);
+    check('Al K (IEC 60949: 148)', al.K, 147, 149);
+    var cu180 = BC.thermalShortCircuit(BC.MATERIALS.Cu, 1.7241e-8, 55, 1, 1000, 20, 180);
+    check('Smin 55 kA·1 s, 20→180 °C (k≈159 → ≈346 mm²)', cu180.Smin, 335, 355);
+
+    // --- air properties
+    var air = BC.airProps(300, 101325);
+    check('Air k at 300 K (0.0263 W/mK)', air.k, 0.0255, 0.0270);
+    check('Air ν at 300 K (1.57e-5 m²/s)', air.nu, 1.52e-5, 1.62e-5);
+    check('Pressure at 1700 m (≈ 82.5 kPa)', BC.airPressure(1700) / 1000, 81.5, 83.5);
+    check('h vertical 0.1 m plate, ΔT 30 K (≈5.6 W/m²K)', BC.hVertical(BC.airProps(323, 101325), 30, 0.1), 5.2, 6.0);
+
+    // --- complex solver via EM at very low frequency: no skin effect
+    var gSmall = { h: 0.1, t: 0.01, n: 2, s: 0.01, a: 0.2, arr: 'face' }; gSmall.D = 0.03;
+    var emLow = BC.solveCurrentDistribution(gSmall, 2e-8, 0.001, { nu: 2, nv: 8 });
+    check('Rac/Rdc → 1 at ~DC', emLow.kac[1], 0.9999, 1.0001);
+    check('Equal current share at ~DC', emLow.shares[1][0], 0.4999, 0.5001);
+
+    // --- validate the filament (PEEC) method against the IEC 60287 skin-effect formula for a round conductor
+    function peecRound(r, rho, f, hg) {
+      var X = [], Y = [], x, y;
+      for (x = -r + hg / 2; x < r; x += hg) for (y = -r + hg / 2; y < r; y += hg) if (x * x + y * y <= r * r) { X.push(x); Y.push(y); }
+      var N = X.length, M = N + 1, Are = new Float64Array(M * M), Aim = new Float64Array(M * M), bre = new Float64Array(M), bim = new Float64Array(M);
+      var w = 2 * Math.PI * f, Rf = rho / (hg * hg), gmd = 0.2235 * 2 * hg, k, m, c, r2;
+      for (k = 0; k < N; k++) {
+        Are[k * M + k] = Rf; Aim[k * M + k] = -w * 2e-7 * Math.log(gmd);
+        for (m = 0; m < N; m++) if (m !== k) { var dx = X[k] - X[m], dy = Y[k] - Y[m]; Aim[k * M + m] = -w * 2e-7 * 0.5 * Math.log(dx * dx + dy * dy); }
+        Are[k * M + N] = -1; Are[N * M + k] = 1;
+      }
+      bre[N] = 1;
+      for (c = 0; c < M; c++) {
+        var p = c, b = -1;
+        for (r2 = c; r2 < M; r2++) { var mg = Are[r2 * M + c] * Are[r2 * M + c] + Aim[r2 * M + c] * Aim[r2 * M + c]; if (mg > b) { b = mg; p = r2; } }
+        if (p !== c) { for (k = 0; k < M; k++) { var a1 = c * M + k, a2 = p * M + k, t1 = Are[a1], t2 = Aim[a1]; Are[a1] = Are[a2]; Aim[a1] = Aim[a2]; Are[a2] = t1; Aim[a2] = t2; } var tb = bre[c]; bre[c] = bre[p]; bre[p] = tb; tb = bim[c]; bim[c] = bim[p]; bim[p] = tb; }
+        var pr = Are[c * M + c], pi = Aim[c * M + c], d = pr * pr + pi * pi, ir = pr / d, ii = -pi / d;
+        for (r2 = c + 1; r2 < M; r2++) {
+          var ar = Are[r2 * M + c], ai = Aim[r2 * M + c]; if (!ar && !ai) continue;
+          var fr = ar * ir - ai * ii, fi = ar * ii + ai * ir;
+          for (k = c; k < M; k++) { var cr = Are[c * M + k], ci = Aim[c * M + k]; Are[r2 * M + k] -= fr * cr - fi * ci; Aim[r2 * M + k] -= fr * ci + fi * cr; }
+          bre[r2] -= fr * bre[c] - fi * bim[c]; bim[r2] -= fr * bim[c] + fi * bre[c];
+        }
+      }
+      var xr = new Float64Array(M), xi = new Float64Array(M);
+      for (r2 = M - 1; r2 >= 0; r2--) {
+        var sr = bre[r2], si = bim[r2];
+        for (k = r2 + 1; k < M; k++) { var mr = Are[r2 * M + k], mi = Aim[r2 * M + k]; sr -= mr * xr[k] - mi * xi[k]; si -= mr * xi[k] + mi * xr[k]; }
+        var dr = Are[r2 * M + r2], di = Aim[r2 * M + r2], dd = dr * dr + di * di;
+        xr[r2] = (sr * dr + si * di) / dd; xi[r2] = (si * dr - sr * di) / dd;
+      }
+      var P = 0; for (k = 0; k < N; k++) P += Rf * (xr[k] * xr[k] + xi[k] * xi[k]);
+      var A = N * hg * hg;
+      var Rp = rho / A, xs2 = 8 * Math.PI * f / Rp * 1e-7, ys = xs2 * xs2 / (192 + 0.8 * xs2 * xs2);
+      return { peec: P / Rp, iec: 1 + ys };
+    }
+    var rd = peecRound(0.01784, 2.03e-8, 50, 0.0016);
+    check('PEEC vs IEC 60287 skin effect, 1000 mm² round Cu (ratio)', rd.peec / rd.iec, 0.995, 1.005);
+
+    // --- single bar skin effect 100×10 Cu at 50 Hz (mesh-converged value ≈ 1.164)
+    var gIso = { h: 0.1, t: 0.01, n: 1, s: 0, a: 3, arr: 'face' }; gIso.D = 0.01;
+    var emIso = BC.solveCurrentDistribution(gIso, 2.03e-8, 50, { nu: 4, nv: 24 });
+    check('Rac/Rdc single 100×10 Cu, 50 Hz, isolated', emIso.kac[1], 1.14, 1.18);
+    var emIso2 = BC.solveCurrentDistribution({ h: 0.1, t: 0.01, n: 2, s: 0.01, a: 3, arr: 'face', D: 0.03 }, 2.03e-8, 50, { nu: 4, nv: 20 });
+    truthy('Two bars per phase, phases far apart: near-equal sharing', Math.abs(emIso2.shares[1][0] - emIso2.shares[1][1]) < 0.03, emIso2.shares[1].map(function (x) { return (x * 100).toFixed(1) + '%'; }).join(' / '));
+    truthy('Two bars per phase: Rac/Rdc higher than single bar', emIso2.kac[1] > emIso.kac[1], emIso2.kac[1].toFixed(4) + ' vs ' + emIso.kac[1].toFixed(4));
+    var em3 = BC.solveCurrentDistribution({ h: 0.1, t: 0.01, n: 3, s: 0.01, a: 3, arr: 'face', D: 0.05 }, 2.03e-8, 50, { nu: 3, nv: 12 });
+    truthy('Three bars: middle bar carries least current', em3.shares[1][1] < em3.shares[1][0], em3.shares[1].map(function (x) { return (x * 100).toFixed(1) + '%'; }).join(' / '));
+
+    // --- force geometry: point-conductor limit
+    var A = BC.rectPoints(0, 0, 0.005, 0.005, 3, 3), B = BC.rectPoints(1, 0, 0.005, 0.005, 3, 3);
+    check('Effective distance → a for small far conductors', 1 / BC.pairFactor(A, B, 1, 0), 0.999, 1.001);
+
+    // --- mechanical cross-check against hand calculation
+    var r = BC.calculate(base());
+    check('Two-conductor force 0.2·121²·0.4/0.15 = 7809 N', r.mech.F2simple, 7800, 7815);
+    check('Peak current 2.2 × 55 kA', r.mech.ip / 1000, 120.999, 121.001);
+    var Fhand = 2e-7 * Math.sqrt(3) / 2 * Math.pow(121e3, 2) / r.mech.am * 0.4;
+    check('Fm3 matches IEC formula with computed a_m', r.mech.Fm3 / Fhand, 0.9999, 1.0001);
+    var sigHand = 0.73 * r.mech.Fm3 * 0.4 / (8 * 2 * 0.1 * 0.01 * 0.01 / 6) / 1e6;
+    check('σm matches IEC formula (β 0.73)', r.mech.sigM / sigHand, 0.9999, 1.0001);
+
+    // --- bolt torques vs typical tables (8.8, K 0.17, 70 % proof)
+    var j = r.joint.table.reduce(function (o, t) { o[t.size] = t.torque; return o; }, {});
+    check('M8 torque (≈ 20 N·m)', j.M8, 18, 23);
+    check('M10 torque (≈ 40 N·m)', j.M10, 36, 44);
+    check('M12 torque (≈ 70 N·m)', j.M12, 64, 76);
+    check('M16 torque (≈ 170 N·m)', j.M16, 155, 185);
+
+    // --- continuous rating sanity vs DIN 43671 (100×10 bare Cu, 35 °C air, 65 °C bar ≈ 1 600–1 700 A)
+    var din = BC.calculate(base({ nBars: 1, phaseSpacing: 1000, internalMode: 'specify', Tinternal: 35, Tmax: 65, finish: 'oxidised', form: '1', derate: 1 }));
+    check('100×10 Cu single bar, ΔT 30 K, ε 0.4 (DIN ≈ 1 600–1 700 A)', din.thermal.Iperm, 1450, 1850);
+    var din2 = BC.calculate(base({ nBars: 2, phaseSpacing: 1000, internalMode: 'specify', Tinternal: 35, Tmax: 65, finish: 'oxidised', form: '1', derate: 1 }));
+    check('2×100×10 / 1×100×10 ratio (DIN ≈ 1.6–1.8)', din2.thermal.Iperm / din.thermal.Iperm, 1.5, 1.9);
+
+    // --- trends
+    var r0 = BC.calculate(base({ altitude: 0 })), r17 = BC.calculate(base({ altitude: 1700 }));
+    truthy('Altitude 1700 m lowers permissible current', r17.thermal.Iperm < r0.thermal.Iperm, r0.thermal.Iperm.toFixed(0) + ' → ' + r17.thermal.Iperm.toFixed(0) + ' A');
+    var ip31 = BC.calculate(base({ ip: 'IP31' })), ip54 = BC.calculate(base({ ip: 'IP54' }));
+    truthy('IP54 rated lower than IP31', ip54.thermal.Iperm < ip31.thermal.Iperm, ip31.thermal.Iperm.toFixed(0) + ' → ' + ip54.thermal.Iperm.toFixed(0) + ' A');
+    var f1 = BC.calculate(base({ form: '1' })), f4 = BC.calculate(base({ form: '4b' }));
+    truthy('Form 4b rated lower than Form 1', f4.thermal.Iperm < f1.thermal.Iperm, f1.thermal.Iperm.toFixed(0) + ' → ' + f4.thermal.Iperm.toFixed(0) + ' A');
+    var pt = BC.calculate(base({ finish: 'painted' }));
+    truthy('Painted bars rated higher than bright', pt.thermal.Iperm > r0.thermal.Iperm, r0.thermal.Iperm.toFixed(0) + ' → ' + pt.thermal.Iperm.toFixed(0) + ' A');
+    var fl = BC.calculate(base({ mounting: 'flat' }));
+    truthy('Flat-mounted 2-bar pack rated lower than on edge', fl.thermal.Iperm < r0.thermal.Iperm, r0.thermal.Iperm.toFixed(0) + ' → ' + fl.thermal.Iperm.toFixed(0) + ' A');
+    truthy('Operating temp at Iperm ≈ Tmax', Math.abs(BC.calculate(base({ In: r0.thermal.Iperm })).thermal.Top - 100) < 0.5, '');
+
+    // --- performance
+    var t0 = performance.now();
+    BC.calculate(base({ nBars: 4 }));
+    var dt = performance.now() - t0;
+    check('Full calculation with 4 bars/phase runs fast (ms)', dt, 0, 1500);
+    t0 = performance.now();
+    var as = BC.autoSize(base(), 8);
+    check('Section finder runtime (ms)', performance.now() - t0, 0, 4000);
+    truthy('Section finder returns candidates for defaults', as.candidates.length > 0, as.candidates.map(function (c) { return c.n + '×' + c.width + '×' + c.thick; }).join(', '));
+
+    var pass = results.filter(function (x) { return x.ok; }).length;
+    document.getElementById('summary').innerHTML = '<strong class="' + (pass === results.length ? 'pass' : 'fail') + '">' + pass + ' / ' + results.length + ' checks passed</strong>';
+    out.innerHTML = results.map(function (x) { return '<li class="' + (x.ok ? 'pass' : 'fail') + '">' + (x.ok ? '✓ ' : '✕ ') + x.name + ' — <code>' + x.detail + '</code></li>'; }).join('');
+    window.__testResults = { pass: pass, total: results.length, results: results };
+  })();
+  </script>
+</body>
+</html>
