@@ -172,6 +172,32 @@
     truthy('Override creepage is used', BC.calculate(base({ matGroup: 'IIIb', creepReq: 20, creepPP: 25 })).insul.okCreepPP === true, '');
     truthy('Altitude 4000 m raises the minimum clearance', BC.calculate(base({ altitude: 4000 })).insul.clearMin > 8, '');
 
+    // --- busbar support system
+    var rs = BC.calculate(base());
+    check('Bar mass: 7 bars of 10x100 Cu = 62.72 kg/m', rs.sup.kgPerM, 62.71, 62.73);
+    var wref = 62.72 * 9.80665 * 0.4 * 1.1;
+    check('Weight per support = m g l alpha_B', rs.sup.weightPerSupport, wref * 0.9999, wref * 1.0001);
+    var Fbar = rs.sup.Fd * 1.2 / 2 / 2;
+    check('Slot wall bending matches hand calculation', rs.sup.sigWall / (Fbar * 4 / (30 * 100 / 6)), 0.9999, 1.0001);
+    check('Slot wall shear matches hand calculation', rs.sup.tauWall / (Fbar / (10 * 30)), 0.9999, 1.0001);
+    truthy('Defaults pass the support checks', rs.sup.ok, 'wall ' + rs.sup.sigWall.toFixed(1) + '/' + rs.sup.allowFlex.toFixed(1) + ' MPa, shear ' + rs.sup.tauWall.toFixed(1) + '/' + rs.sup.allowShear.toFixed(1) + ' MPa, fixings ' + (rs.sup.fixLoad / 1000).toFixed(1) + '/' + (rs.sup.fixShearCap / 1000).toFixed(1) + ' kN');
+    var nrec = Math.ceil(2390 / (0.85 * rs.mech.lmax)) + 1;
+    check('Supports needed at the recommended span', rs.sup.nRec, nrec, nrec);
+    truthy('Longer run needs more supports', BC.calculate(base({ runLen: 4000 })).sup.nRec > rs.sup.nRec, '');
+    truthy('Flat clamp blocks cannot hold 55 kA by friction', BC.calculate(base({ supType: 'flat' })).sup.okHold === false, '');
+    check('Creepage over one 15 mm rib = gap + 30 mm', rs.sup.creepPath, rs.clearance + 30 - 1e-9, rs.clearance + 30 + 1e-9);
+    truthy('Narrow groove is not counted', BC.calculate(base({ ribN: 10, ribT: 11 })).sup.ribsCounted === false, '');
+    check('Rib creepage feeds the insulation check', BC.calculate(base({ creepSource: 'ribs' })).insul.creepPP, rs.clearance + 30 - 1e-9, rs.clearance + 30 + 1e-9);
+    check('Thermal expansion = alpha L dT (ratio)', rs.sup.dL / (17e-6 * 2390 * (rs.thermal.Top - 20)), 0.9999, 1.0001);
+    check('Movement at the furthest support, fixed at the centre = dL/2', rs.sup.move / rs.sup.dL, 0.5, 0.5);
+    check('Movement fixed at one end = dL', BC.calculate(base({ fixedPoint: 'end' })).sup.move / rs.sup.dL, 0.99, 1.01);
+    var ral = BC.calculate(base({ material: 'Al', temper: '6101T6', iacs: 55, rp: 160, thetaSC: 180 }));
+    check('Aluminium bars are lighter (kg/m)', ral.sup.kgPerM, 18.89, 18.91);
+    truthy('More bars per phase add weight', BC.calculate(base({ nBars: 3 })).sup.kgPerM > rs.sup.kgPerM, '');
+    truthy('Entered support rating below Fd fails', BC.calculate(base({ supRating: 5 })).sup.okRating === false, '');
+    truthy('Entered support rating above Fd passes', BC.calculate(base({ supRating: 60 })).sup.okRating === true, '');
+    truthy('Weak fixings fail', BC.calculate(base({ fixN: 1, fixSize: 'M6' })).sup.okFix === false, '');
+
     // --- performance
     var t0 = performance.now();
     BC.calculate(base({ nBars: 4 }));

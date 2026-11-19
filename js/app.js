@@ -69,7 +69,7 @@
       { id: 'pollution', label: 'Pollution degree', type: 'select', options: [['1', '1'], ['2', '2'], ['3', '3 (industrial)']] },
       { id: 'matGroup', label: 'Insulating material group', type: 'select', full: true, options: [['I', 'I (CTI ≥ 600)'], ['II', 'II (400 ≤ CTI < 600)'], ['IIIa', 'IIIa (175 ≤ CTI < 400)'], ['IIIb', 'IIIb (100 ≤ CTI < 175)']] },
       { id: 'clrEncl', label: 'Live part to enclosure / earthed part', unit: 'mm', type: 'number', min: 1, step: 5, hint: 'Shortest air gap, bars at rest' },
-      { id: 'creepPP', label: 'Creepage across supports, phase–phase', unit: 'mm', type: 'number', min: 1, step: 5 },
+      { id: 'creepPP', label: 'Creepage across supports, phase–phase', unit: 'mm', type: 'number', min: 1, step: 5, show: function (s) { return s.creepSource !== 'ribs'; } },
       { id: 'creepPE', label: 'Creepage, phase–earth', unit: 'mm', type: 'number', min: 1, step: 5 },
       { id: 'creepReq', label: 'Required creepage override', unit: 'mm', type: 'number', min: 0, step: 0.5, hint: '0 = use IEC 61439-1 Table 2. Ribs ≥ 2 mm high allow 0.8 × Table 2, never below the clearance' }
     ] },
@@ -81,6 +81,33 @@
       { id: 'q', label: 'Plasticity factor q', type: 'number', min: 1, max: 1.83, step: 0.01, hint: '1.5 for rectangular bars' },
       { id: 'vsvr', label: 'Vσ·Vr (stress)', type: 'number', min: 0.5, max: 2, step: 0.1, hint: '1.0 without auto-reclosure' },
       { id: 'vfvr', label: 'V_F·Vr (support force)', type: 'number', min: 0.5, max: 2.7, step: 0.1, hint: '2.7 = 3-phase upper bound' }
+    ] },
+    { id: 'supports', title: 'Busbar support system', open: true, fields: [
+      { id: 'runLen', label: 'Busbar run length', unit: 'mm', type: 'number', min: 100, step: 50, hint: 'Length carried by the supports' },
+      { id: 'neutralBars', label: 'Neutral bars on the supports', type: 'select', options: [['0', 'none'], ['1', '1 bar'], ['2', '2 bars'], ['3', '3 bars'], ['4', '4 bars']] },
+      { id: 'supType', label: 'Support type', type: 'select', full: true, options: [['comb', 'Slotted comb, two-piece (bars held in slots)'], ['flat', 'Flat clamp blocks (held by friction only)']] },
+      { id: 'supWidth', label: 'Support width along the bar', unit: 'mm', type: 'number', min: 5, step: 5 },
+      { id: 'blkT', label: 'Support block thickness', unit: 'mm', type: 'number', min: 5, step: 1, show: function (s) { return s.supType === 'comb'; } },
+      { id: 'slotDepth', label: 'Slot depth', unit: 'mm', type: 'number', min: 1, step: 1, show: function (s) { return s.supType === 'comb'; } },
+      { id: 'wallT', label: 'Slot wall thickness', unit: 'mm', type: 'number', min: 2, step: 1, hint: 'Rib between the bars of a phase', show: function (s) { return s.supType === 'comb'; } },
+      { id: 'mu', label: 'Friction coefficient bar / block', type: 'number', min: 0.05, max: 0.6, step: 0.05, show: function (s) { return s.supType === 'flat'; } },
+      { id: 'shareFactor', label: 'Uneven bar load factor', type: 'number', min: 1, max: 2, step: 0.05, hint: 'Outer bars carry more current', show: function (s) { return +s.nBars > 1; } },
+      { id: 'ribN', label: 'Ribs between phases', type: 'select', options: [['0', 'none'], ['1', '1'], ['2', '2'], ['3', '3']] },
+      { id: 'ribH', label: 'Rib height', unit: 'mm', type: 'number', min: 1, step: 1, show: function (s) { return +s.ribN > 0; } },
+      { id: 'ribT', label: 'Rib thickness', unit: 'mm', type: 'number', min: 1, step: 1, show: function (s) { return +s.ribN > 0; } },
+      { id: 'creepSource', label: 'Phase-to-phase creepage', type: 'select', full: true, options: [['manual', 'Use the value I entered above'], ['ribs', 'Calculate from the rib geometry']] },
+      { id: 'matFlex', label: 'Support material: bending strength', unit: 'MPa', type: 'number', min: 10, step: 5, hint: 'Typical glass-polyester; use the datasheet' },
+      { id: 'matShear', label: 'Support material: shear strength', unit: 'MPa', type: 'number', min: 5, step: 5 },
+      { id: 'matTens', label: 'Support material: tensile strength', unit: 'MPa', type: 'number', min: 5, step: 5 },
+      { id: 'supSF', label: 'Safety factor on the support material', type: 'number', min: 1, max: 4, step: 0.1 },
+      { id: 'spanMargin', label: 'Margin on the permissible span', type: 'number', min: 0.3, max: 1, step: 0.05, hint: '0.85 = use 85 % of the maximum span' },
+      { id: 'supRating', label: 'Support rating from manufacturer', unit: 'kN', type: 'number', min: 0, step: 1, hint: '0 = not entered; the calculator shows the rating you need' },
+      { id: 'fixN', label: 'Fixing bolts per support', type: 'number', min: 1, step: 1 },
+      { id: 'fixSize', label: 'Fixing bolt size', type: 'select', options: Object.keys(BC.BOLTS).map(function (k) { return [k, k]; }) },
+      { id: 'fixGrade', label: 'Fixing bolt grade', type: 'select', options: opt(BC.GRADES) },
+      { id: 'fixFactor', label: 'Short-circuit load on fixings', type: 'number', min: 0.1, max: 1, step: 0.05, hint: '1.0 = full F_d (conservative)' },
+      { id: 'Tinstall', label: 'Installation temperature', unit: '°C', type: 'number', step: 1 },
+      { id: 'fixedPoint', label: 'Fixed point of the run', type: 'select', options: [['centre', 'Centre support'], ['end', 'One end']] }
     ] },
     { id: 'joint', title: 'Bolted joints', open: false, fields: [
       { id: 'boltSize', label: 'Bolt size', type: 'select', options: [['auto', 'Auto (by bar width)']].concat(Object.keys(BC.BOLTS).map(function (k) { return [k, k]; })) },
@@ -281,6 +308,7 @@
     if (!sc.ok) fails.push('Short-circuit thermal: cross-section ' + fmt(sc.S) + ' mm² is below the required ' + fmt(sc.Smin) + ' mm².');
     if (!me.ok) fails.push('Short-circuit mechanical: conductor stress exceeds the permissible value – reduce the support span or spacer interval, or increase the bar section / phase spacing.');
     if (!r.insul.ok) fails.push('Clearance / creepage: ' + insulFails(r.insul) + '.');
+    if (!r.sup.ok) fails.push('Support system: ' + supFails(r.sup) + '.');
 
     html += '<div class="print-only"><h2 style="font-size:16px;margin-bottom:6px">Calculation report — ' + esc(describeSection(inp)) + '</h2><p class="muted">' + new Date().toLocaleString() + ' · ' + esc(location.href) + '</p></div>';
 
@@ -299,6 +327,7 @@
       kpi('Short-circuit thermal', sc.ok, fmt(sc.S) + ' <small>mm²</small>', 'Needs ≥ ' + fmt(sc.Smin) + ' mm² · end temp. ' + fmt(sc.thetaEnd) + ' °C', sc.Smin / sc.S) +
       kpi('Short-circuit stress', me.ok, fmt(me.sigTot) + ' <small>MPa</small>', 'Limit ' + fmt(me.limTot) + ' MPa · max span ' + fmt(me.lmax, 0) + ' mm', me.sigTot / me.limTot) +
       kpi('Clearance during a fault', r.insul.ok, fmt(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 1) + ' <small>mm</small>', 'Minimum ' + fmt(r.insul.clearMin, 1) + ' mm · bars deflect ' + fmt(r.insul.deflection, 1) + ' mm' + (r.insul.elastic ? ' (elastic)' : ' (yielding)'), r.insul.clearMin / Math.max(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 0.001)) +
+      kpi('Support load per phase', r.sup.ok, fmt(r.sup.Fd / 1000, 1) + ' <small>kN</small>', r.sup.nSel + ' supports at ' + fmt(inp.span) + ' mm · bars ' + fmt(r.sup.mass) + ' kg', null) +
       (jt ? kpi('Joint tightening torque', null, fmt(jt.torque, jt.torque < 20 ? 1 : 0) + ' <small>N·m</small>', jt.count + ' × ' + jt.size + ' ' + esc(inp.grade) + ' · preload ' + fmt(jt.preload.F / 1000, 1) + ' kN each', null) : '') +
       '</div>';
 
@@ -308,7 +337,7 @@
       (inp.mounting === 'flat' ? 'bars flat' : inp.mounting === 'vertical' ? 'vertical run (plan view)' : 'bars on edge') + '. Shading shows current density relative to a uniform (DC) distribution at ' + fmt(inp.freq) + ' Hz.</p>' +
       '<div class="grid-2 grid-xsec"><div>' + drawSection(r) + '</div><div>' + sharingTable(r) + '</div></div></div>';
 
-    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + (jt ? jointPanel(r) : '') + autosizePanel() + methodPanel() + inputsSummary(r);
+    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + autosizePanel() + methodPanel() + inputsSummary(r);
     return html;
   }
 
@@ -528,6 +557,68 @@
       '<li>The altitude factor is from IEC 60664-1 Table A.2; IEC 61439-1 clause 7.1.4 only says that altitude above 2000 m must be taken into account. Clearances and creepage are verified by measurement (clause 10.4, Annex F) or the clause 10.9.3 impulse test.</li></ul></details>';
   }
 
+  function supFails(s) {
+    var m = [];
+    if (!s.spanOk) m.push('span above the recommended maximum of ' + fmt(s.lmaxEff) + ' mm');
+    if (s.comb && !s.okWall) m.push('slot walls overstressed');
+    if (s.comb && !s.okBlock) m.push('support body overstressed');
+    if (!s.comb && !s.okHold) m.push('flat clamps cannot hold the short-circuit load');
+    if (!s.okFix) m.push('fixings overloaded');
+    if (s.okRating === false) m.push('support rating below the short-circuit load');
+    if (s.nRibs > 0 && !s.ribFit) m.push('ribs do not fit between the phases');
+    return m.join('; ');
+  }
+
+  function supRow(label, value, limit, ok) {
+    var b = ok === null ? '<span class="badge warn">ENTER VALUE</span>' : badge(ok);
+    return '<tr><td>' + label + '</td><td class="num">' + value + '</td><td class="num">' + limit + '</td><td>' + b + '</td></tr>';
+  }
+
+  function supportPanel(r) {
+    var s = r.sup, inp = r.inputs;
+    var left = '<table class="data">' +
+      '<tr><td>Bars on the supports</td><td class="num">' + s.nBarsTot + ' × ' + fmt(inp.width) + ' × ' + fmt(inp.thick) + ' mm</td></tr>' +
+      '<tr><td>Mass of the bars</td><td class="num">' + fmt(s.kgPerM, 1) + ' kg/m · ' + fmt(s.mass) + ' kg</td></tr>' +
+      '<tr class="sub"><td colspan="2">Over a run of ' + fmt(inp.runLen) + ' mm, all poles</td></tr>' +
+      '<tr><td>Weight carried per support</td><td class="num">' + fmt(s.weightPerSupport) + ' N</td></tr>' +
+      '<tr><td>Sag of a bar between supports</td><td class="num">' + fmt(s.sag, 2) + ' mm</td></tr>' +
+      '<tr class="highlight"><td><strong>Short-circuit load per support F<sub>d</sub></strong></td><td class="num"><strong>' + fmt(s.Fd / 1000, 1) + ' kN</strong></td></tr>' +
+      '<tr><td>Resultant on the fixings (short circuit + weight)</td><td class="num">' + fmt(s.fixResultant / 1000, 1) + ' kN</td></tr>' +
+      '<tr><td>Supports needed at your span of ' + fmt(inp.span) + ' mm</td><td class="num">' + s.nSel + '</td></tr>' +
+      '<tr class="highlight"><td><strong>Supports needed at the recommended span</strong></td><td class="num"><strong>' + (isFinite(s.nRec) ? s.nRec + ' at ' + fmt(s.spacingRec) + ' mm' : 'span too long') + '</strong></td></tr>' +
+      '<tr class="sub"><td colspan="2">Recommended span = ' + fmt(inp.spanMargin, 2) + ' × permissible ' + fmt(r.mech.lmax) + ' mm = ' + fmt(s.lmaxEff) + ' mm</td></tr></table>';
+    var chk = '<table class="data"><tr><th>Check</th><th class="r">Value</th><th class="r">Limit</th><th></th></tr>' +
+      supRow('Support span', fmt(inp.span) + ' mm', '≤ ' + fmt(s.lmaxEff) + ' mm', s.spanOk);
+    if (s.comb) {
+      chk += supRow('Slot wall bending', fmt(s.sigWall, 1) + ' MPa', '≤ ' + fmt(s.allowFlex, 1) + ' MPa', s.sigWall <= s.allowFlex) +
+        supRow('Slot wall shear', fmt(s.tauWall, 1) + ' MPa', '≤ ' + fmt(s.allowShear, 1) + ' MPa', s.tauWall <= s.allowShear) +
+        supRow('Body between phase slots', fmt(s.sigBlock, 1) + ' MPa', '≤ ' + fmt(s.allowTens, 1) + ' MPa', s.okBlock);
+    } else {
+      chk += supRow('Clamp force per bar (friction)', fmt(s.clampPerBar / 1000, 1) + ' kN', '≤ ' + fmt(s.clampLimit / 1000, 1) + ' kN', s.okHold);
+    }
+    chk += supRow('Fixing bolts (' + fmt(inp.fixN) + ' × ' + esc(inp.fixSize) + ' ' + esc(inp.fixGrade) + ')', fmt(s.fixLoad / 1000, 1) + ' kN each', '≤ ' + fmt(s.fixShearCap / 1000, 1) + ' kN', s.okFix) +
+      supRow('Manufacturer rating', fmt(s.Fd / 1000, 1) + ' kN needed', s.rating === null ? 'not entered' : fmt(s.rating / 1000, 1) + ' kN', s.okRating) + '</table>';
+    var ex = '<table class="data">' +
+      '<tr><td>Temperature rise from installation (' + fmt(inp.Tinstall) + ' °C)</td><td class="num">' + fmt(s.dTheta, 1) + ' K</td></tr>' +
+      '<tr><td>Free expansion of the run</td><td class="num">' + fmt(s.dL, 2) + ' mm</td></tr>' +
+      '<tr><td>Movement at the furthest support (' + (inp.fixedPoint === 'end' ? 'fixed at one end' : 'fixed at the centre') + ')</td><td class="num">' + fmt(s.move, 2) + ' mm</td></tr>' +
+      '<tr class="highlight"><td><strong>Sliding allowance in clamps and fixings</strong></td><td class="num"><strong>≥ ' + fmt(s.move + 2, 1) + ' mm</strong></td></tr>' +
+      '<tr><td>Force if the bars were fully restrained</td><td class="num">' + fmt(s.fConstr / 1000) + ' kN per bar</td></tr></table>';
+    var rib = '<table class="data">' +
+      '<tr><td>Air gap between phases</td><td class="num">' + fmt(s.gap, 1) + ' mm</td></tr>' +
+      '<tr><td>Ribs between phases</td><td class="num">' + s.nRibs + (s.nRibs > 0 ? ' × ' + fmt(inp.ribH) + ' high, ' + fmt(inp.ribT) + ' thick' : '') + '</td></tr>' +
+      '<tr><td>Groove width (minimum ' + fmt(s.grooveMin, 2) + ' mm, Table F.1)</td><td class="num">' + (s.nRibs === 0 ? '–' : s.ribFit ? fmt(s.grooveW, 1) + ' mm' : 'ribs do not fit') + '</td></tr>' +
+      '<tr class="highlight"><td><strong>Creepage path phase to phase</strong></td><td class="num"><strong>' + fmt(s.creepPath, 1) + ' mm</strong></td></tr>' +
+      '<tr class="sub"><td colspan="2">' + (s.nRibs === 0 ? 'No ribs: the path equals the air gap.' : s.ribsCounted ? 'Ribs counted: rib height at least 2 mm and grooves wide enough.' : 'Ribs not counted for creepage.') +
+      (r.insul.creepReq !== null ? ' Table 2 requires ' + fmt(r.insul.creepReq, 1) + ' mm. With ribs of at least 2 mm it may be reduced to ' + fmt(0.8 * r.insul.creepReq, 1) + ' mm, never below the clearance (not applied here).' : '') + '</td></tr></table>';
+    return '<details class="card panel" open><summary><span>Busbar support system</span>' + badge(s.ok) + '</summary>' +
+      '<div class="grid-2"><div>' + left + '</div><div>' + chk + '</div></div>' +
+      '<div class="grid-2" style="margin-top:16px"><div><h4 style="margin:0 0 6px;font-size:13px">Thermal expansion of the run</h4>' + ex + '</div><div><h4 style="margin:0 0 6px;font-size:13px">Creepage over the ribs</h4>' + rib + '</div></div>' +
+      '<ul class="notes muted"><li>The short-circuit force acts sideways between the phases and the weight of the bars acts downwards. The fixings carry the vector sum, and the supports must be rated for both.</li>' +
+      '<li>The bars expand when hot. Fix them at one support only, let the others slide (slotted fixings or clamps), and connect the ends with flexible links. Rigid clamping at every support would build up the restraint force shown above.</li>' +
+      '<li>' + (s.comb ? 'Slotted supports hold each bar edge positively.' : 'Flat clamp blocks hold the bars only by friction, which is not a reliable way to resist the short-circuit force.') + ' The material strengths, the safety factor, the fixing shear capacity (0.6 · Rp · As / 1.25) and the bar load factor are assumptions: replace them with the support manufacturer test data. Clause 10.11.5.5 requires that a support does not break into pieces or crack through its section in the short-circuit test.</li></ul></details>';
+  }
+
   function jointPanel(r) {
     var j = r.joint, inp = r.inputs;
     var rows = j.table.map(function (t) {
@@ -569,7 +660,7 @@
       '<h4>4. Short-circuit thermal</h4><p>Adiabatic heating from the operating temperature θᵢ to θ<sub>f</sub>: <span class="formula">S<sub>min</sub> = I<sub>cw</sub>√t / k</span> with k = K·√ln((θ<sub>f</sub>+β)/(θᵢ+β)), K = √(Q<sub>c</sub>(β+20)/ρ<sub>20</sub>) (IEC 60949). Recommended θ<sub>f</sub>: 200 °C copper, 180 °C aluminium (IEC 60865-1).</p>' +
       '<h4>5. Short-circuit forces (IEC 60865-1 simplified method)</h4><p>i<sub>p</sub> = n·I<sub>cw</sub> with n from IEC 61439-1 Table 7. Centre-phase force F<sub>m3</sub> = (μ₀/2π)(√3/2)i<sub>p</sub>²l/a<sub>m</sub>; sub-conductor force F<sub>s</sub> = (μ₀/2π)(i<sub>p</sub>/n)²lₛ/aₛ. Effective distances a<sub>m</sub>, aₛ are integrated numerically for the actual rectangular sections. Stresses σ<sub>m</sub> = V<sub>σ</sub>V<sub>r</sub>βF<sub>m3</sub>l/(8Z<sub>m</sub>), σₛ = V<sub>σ</sub>V<sub>r</sub>Fₛlₛ/(16Zₛ); require σ<sub>tot</sub> ≤ q·R<sub>p0.2</sub> and σₛ ≤ R<sub>p0.2</sub>. Support force F<sub>d</sub> = V<sub>F</sub>V<sub>r</sub>·α·F<sub>m3</sub>. Natural-frequency (dynamic) reduction factors are not applied (conservative).</p>' +
       '<h4>6. Bolted joints</h4><p>Preload F = (% of proof)·A<sub>s</sub>·R<sub>p</sub> (ISO 898-1 / ISO 3506-1); torque <span class="formula">T = K·F·d</span>. Bolt patterns follow common practice (cf. DIN 43673 / CDA Pub. 22). Checks: mean contact pressure over the overlap and washer bearing pressure vs. the bar\'s 0.2 % proof stress.</p>' +
-      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment (IEC TR 61641), deformation of the enclosure or barriers.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
+      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
       '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
   }
 

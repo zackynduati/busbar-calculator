@@ -33,7 +33,7 @@
   var MATERIALS = {
     Cu: {
       label: 'Copper',
-      E: 120e9, iacs: 100, alpha20: 0.00393,           // conductivity %IACS, temp. coeff. at 20 °C [1/K]
+      E: 120e9, rho: 8960, alphaL: 17e-6, iacs: 100, alpha20: 0.00393,           // conductivity %IACS, temp. coeff. at 20 °C [1/K]
       Qc: 3.45e6, B: 234.5,                  // vol. heat capacity [J/(K·m³)], reciprocal temp. coeff. [K] (IEC 60949)
       thetaSC: 200,                          // recommended max. temperature during short circuit [°C]
       tempers: [
@@ -44,7 +44,7 @@
     },
     Al: {
       label: 'Aluminium',
-      E: 69e9, iacs: 61, alpha20: 0.00403,
+      E: 69e9, rho: 2700, alphaL: 23e-6, iacs: 61, alpha20: 0.00403,
       Qc: 2.5e6, B: 228,
       thetaSC: 180,
       tempers: [
@@ -175,6 +175,11 @@
     internalMode: 'estimate', Tinternal: 50, Tmax: 100, derate: 1.0,
     // insulation coordination
     Ui: 1000, pollution: 3, matGroup: 'IIIa', clrEncl: 50, creepPP: 40, creepPE: 40, creepReq: 0,
+    // busbar support system
+    runLen: 2390, neutralBars: 1, Tinstall: 20, fixedPoint: 'centre',
+    supType: 'comb', blkT: 25, supWidth: 30, slotDepth: 8, wallT: 10, ribN: 1, ribH: 15, ribT: 10, creepSource: 'manual',
+    matFlex: 100, matShear: 30, matTens: 40, supSF: 1.5, shareFactor: 1.2, mu: 0.25, spanMargin: 0.85, supRating: 0,
+    fixN: 2, fixSize: 'M8', fixGrade: '8.8', fixFactor: 1.0,
     // short-circuit mechanics
     support: 'cont3', span: 400, spacer: 400, vsvr: 1.0, vfvr: 2.7, q: 1.5,
     // short-circuit thermal
@@ -582,6 +587,74 @@
     return { proof: proof, Fproof: proof * b.As, F: pct / 100 * proof * b.As };
   }
 
+  // Busbar support system: weight, number of supports, support/fixing loads, thermal movement, creepage over ribs.
+  function supportSystem(g, inp, mat, mech, thermal, gapMm) {
+    var sup = mech.support, grav = 9.80665, isVert = inp.mounting === 'vertical';
+    var o = {};
+    var nTot = 3 * g.n + inp.neutralBars, area = g.h * g.t;
+    o.nBarsTot = nTot; o.kgPerM = mat.rho * area * nTot; o.mass = o.kgPerM * inp.runLen / 1000;
+
+    // number of supports along the run
+    o.lmaxEff = mech.lmax * inp.spanMargin;
+    o.nRec = o.lmaxEff > 0 ? Math.max(2, Math.ceil(inp.runLen / o.lmaxEff) + 1) : Infinity;
+    o.spacingRec = isFinite(o.nRec) ? inp.runLen / (o.nRec - 1) : null;
+    o.nSel = Math.max(2, Math.ceil(inp.runLen / inp.span) + 1);
+    o.spanOk = inp.span <= o.lmaxEff;
+
+    // dead weight carried by one support (all poles) and sag of a bar between supports
+    o.weightPerSupport = isVert ? o.mass * grav / o.nSel : o.kgPerM * grav * (inp.span / 1000) * sup.alphaB;
+    var Iv = inp.mounting === 'flat' ? g.h * g.t * g.t * g.t / 12 : g.t * g.h * g.h * g.h / 12;
+    o.sag = isVert ? 0 : 1000 * sup.defl * mat.rho * area * grav * Math.pow(inp.span / 1000, 4) / (mat.E * Iv);
+
+    // short-circuit load and how the support holds the bars
+    o.Fd = Math.max(mech.FdA, mech.FdB);
+    var nb = g.n, share = nb > 1 ? inp.shareFactor : 1;
+    o.Fbar = o.Fd * share / nb / 2;                      // per bar, per support half
+    o.comb = inp.supType === 'comb';
+    o.allowFlex = inp.matFlex / inp.supSF; o.allowShear = inp.matShear / inp.supSF; o.allowTens = inp.matTens / inp.supSF;
+    if (o.comb) {
+      var d = inp.slotDepth, w = inp.supWidth, t = inp.wallT;
+      o.sigWall = o.Fbar * (d / 2) / (w * t * t / 6);
+      o.tauWall = o.Fbar / (t * w);
+      o.sigBlock = (o.Fd / 2) / (Math.max(inp.blkT - d, 0.1) * w);
+      o.okWall = o.sigWall <= o.allowFlex && o.tauWall <= o.allowShear;
+      o.okBlock = o.sigBlock <= o.allowTens;
+      o.okHold = o.okWall && o.okBlock;
+    } else {
+      o.clampPerBar = o.Fd * share / (nb * 2 * inp.mu);   // friction on both edges of the bar
+      o.clampLimit = boltPreload('M8', '8.8', 70).F;
+      o.okHold = o.clampPerBar <= o.clampLimit;
+    }
+
+    // fixings to the frame: short-circuit force and weight act at right angles
+    var B = BOLTS[inp.fixSize] || BOLTS.M8, gr = GRADES[inp.fixGrade] || GRADES['8.8'];
+    o.fixShearCap = 0.6 * gr.proof(B.d) * B.As / 1.25;
+    o.fixResultant = Math.sqrt(Math.pow(o.Fd * inp.fixFactor, 2) + o.weightPerSupport * o.weightPerSupport);
+    o.fixLoad = o.fixResultant / Math.max(inp.fixN, 1);
+    o.okFix = o.fixLoad <= o.fixShearCap;
+    o.rating = inp.supRating > 0 ? inp.supRating * 1000 : null;
+    o.okRating = o.rating === null ? null : o.Fd <= o.rating;
+
+    // thermal expansion of the run
+    var dth = (isFinite(thermal.Top) ? thermal.Top : inp.Tmax) - inp.Tinstall;
+    o.dTheta = dth; o.dL = mat.alphaL * inp.runLen * dth;
+    o.move = inp.fixedPoint === 'end' ? o.dL : o.dL / 2;
+    o.fConstr = mat.E * area * mat.alphaL * dth;            // N per bar if fully restrained
+
+    // creepage between phase packs over ribs (IEC 61439-1 Annex F: groove width X, rib height >= 2 mm)
+    var Xmap = { 1: 0.25, 2: 1.0, 3: 1.5 };
+    o.grooveMin = Xmap[inp.pollution] || 1.5;
+    var nr = Math.max(0, Math.round(inp.ribN));
+    o.gap = gapMm; o.nRibs = nr;
+    o.ribFit = nr * inp.ribT < gapMm;
+    o.grooveW = o.ribFit ? (gapMm - nr * inp.ribT) / (nr + 1) : 0;
+    o.ribsCounted = nr > 0 && o.ribFit && inp.ribH >= 2 && o.grooveW >= o.grooveMin;
+    o.creepPath = gapMm + (o.ribsCounted ? 2 * nr * inp.ribH : 0);
+
+    o.ok = o.spanOk && o.okHold && o.okFix && o.okRating !== false && (nr === 0 || o.ribFit);
+    return o;
+  }
+
   function boltedJoint(inp, rpBar) {
     var rec = recommendBolts(inp.width);
     var size = inp.boltSize === 'auto' ? rec.size : inp.boltSize;
@@ -626,7 +699,9 @@
     o.formConv = Object.assign({}, FORM_CONV_DEFAULT, (inp && inp.formConv) || {});
     ['In', 'freq', 'Icw', 'tk', 'peakFactor', 'Uimp', 'rp', 'iacs', 'width', 'thick', 'nBars', 'gap', 'eps', 'runLength',
      'phaseSpacing', 'Troom', 'altitude', 'Tinternal', 'Tmax', 'derate', 'span', 'spacer', 'vsvr', 'vfvr', 'q',
-     'thetaSC', 'preloadPct', 'overlap', 'Ui', 'pollution', 'clrEncl', 'creepPP', 'creepPE', 'creepReq'].forEach(function (k) { o[k] = Number(o[k]); });
+     'thetaSC', 'preloadPct', 'overlap', 'Ui', 'pollution', 'clrEncl', 'creepPP', 'creepPE', 'creepReq',
+     'runLen', 'neutralBars', 'Tinstall', 'blkT', 'supWidth', 'slotDepth', 'wallT', 'ribN', 'ribH', 'ribT', 'matFlex', 'matShear', 'matTens',
+     'supSF', 'shareFactor', 'mu', 'spanMargin', 'supRating', 'fixN', 'fixFactor'].forEach(function (k) { o[k] = Number(o[k]); });
     o.nBars = Math.max(1, Math.round(o.nBars));
     if (o.finish !== 'custom' && FINISHES[o.finish]) o.eps = FINISHES[o.finish].eps;
     return o;
@@ -728,6 +803,19 @@
     result.mech = mechanical(g, inp, inp.rp, opts.coarse);
     if (inp.span > result.mech.lmax) warnings.push('Support span exceeds the maximum permissible span for the short-circuit stress.');
 
+    // busbar support system (weight, number of supports, holding strength, fixings, expansion, rib creepage)
+    result.sup = supportSystem(g, inp, mat, result.mech, result.thermal, clearance);
+    var sp = result.sup;
+    if (inp.creepSource === 'ribs') inp.creepPP = sp.creepPath;
+    if (!sp.spanOk && isFinite(sp.lmaxEff)) warnings.push('Support span ' + inp.span.toFixed(0) + ' mm exceeds the recommended maximum of ' + sp.lmaxEff.toFixed(0) + ' mm (' + inp.spanMargin + ' x the permissible span).');
+    if (sp.comb && !sp.okWall) warnings.push('Support slot walls are overstressed (bending ' + sp.sigWall.toFixed(0) + ' / ' + sp.allowFlex.toFixed(0) + ' MPa, shear ' + sp.tauWall.toFixed(0) + ' / ' + sp.allowShear.toFixed(0) + ' MPa) - make the walls thicker or the support wider.');
+    if (sp.comb && !sp.okBlock) warnings.push('Support body is overstressed between the phase slots (' + sp.sigBlock.toFixed(0) + ' / ' + sp.allowTens.toFixed(0) + ' MPa) - use a thicker block or a stronger material.');
+    if (!sp.comb && !sp.okHold) warnings.push('Flat clamp blocks would need about ' + (sp.clampPerBar / 1000).toFixed(1) + ' kN clamp force per bar to hold the short-circuit load by friction - use slotted supports.');
+    if (!sp.okFix) warnings.push('Support fixings are overloaded (' + (sp.fixLoad / 1000).toFixed(1) + ' kN per bolt against ' + (sp.fixShearCap / 1000).toFixed(1) + ' kN) - use more or larger bolts.');
+    if (sp.okRating === false) warnings.push('The support rating you entered (' + (sp.rating / 1000).toFixed(1) + ' kN) is below the short-circuit load of ' + (sp.Fd / 1000).toFixed(1) + ' kN.');
+    if (sp.nRibs > 0 && !sp.ribFit) warnings.push('The ribs do not fit in the gap between phases.');
+    else if (sp.nRibs > 0 && !sp.ribsCounted) warnings.push('The ribs are not counted for creepage (groove narrower than ' + sp.grooveMin + ' mm or rib lower than 2 mm, IEC 61439-1 Annex F).');
+
     // clearances and creepage (IEC 61439-1 clause 8.3 / 10.4), including bar movement during the fault (clause 10.11)
     var defl = result.mech.deflection * 1000;
     var cr = creepageRequired(inp.Ui, inp.pollution, inp.matGroup);
@@ -764,7 +852,7 @@
     // bolted joint
     if (!opts.skipJoint) result.joint = boltedJoint(inp, inp.rp);
 
-    result.ok = result.thermal.ok && result.sc.ok && result.mech.ok && result.insul.ok;
+    result.ok = result.thermal.ok && result.sc.ok && result.mech.ok && result.insul.ok && result.sup.ok;
     return result;
   }
 
@@ -784,7 +872,7 @@
         out.push({
           width: w, thick: t, n: n, gap: cand.gap, S: r.S, Iperm: r.thermal.Iperm, Top: r.thermal.Top,
           util: r.thermal.utilisation, scOk: r.sc.ok, mechUtil: r.mech.sigTot / r.mech.limTot, mechOk: r.mech.ok,
-          lmax: r.mech.lmax, clearOk: clearOk, ok: r.thermal.ok && r.sc.ok && r.mech.ok && clearOk
+          lmax: r.mech.lmax, clearOk: clearOk, ok: r.thermal.ok && r.sc.ok && r.mech.ok && clearOk && r.sup.ok
         });
       }
     }
@@ -794,7 +882,7 @@
   }
 
   return {
-    version: '1.1.0',
+    version: '1.2.0',
     MATERIALS: MATERIALS, STANDARD_SIZES: STANDARD_SIZES, FINISHES: FINISHES, IP_CLASSES: IP_CLASSES,
     IP_RISE_DEFAULT: IP_RISE_DEFAULT, FORMS: FORMS, FORM_RISE_DEFAULT: FORM_RISE_DEFAULT, FORM_CONV_DEFAULT: FORM_CONV_DEFAULT,
     LOCATION_FACTOR: LOCATION_FACTOR, PEAK_TABLE: PEAK_TABLE, CLEARANCE_TABLE: CLEARANCE_TABLE, SUPPORTS: SUPPORTS,
