@@ -33,7 +33,7 @@
   var MATERIALS = {
     Cu: {
       label: 'Copper',
-      iacs: 100, alpha20: 0.00393,           // conductivity %IACS, temp. coeff. at 20 °C [1/K]
+      E: 120e9, iacs: 100, alpha20: 0.00393,           // conductivity %IACS, temp. coeff. at 20 °C [1/K]
       Qc: 3.45e6, B: 234.5,                  // vol. heat capacity [J/(K·m³)], reciprocal temp. coeff. [K] (IEC 60949)
       thetaSC: 200,                          // recommended max. temperature during short circuit [°C]
       tempers: [
@@ -44,7 +44,7 @@
     },
     Al: {
       label: 'Aluminium',
-      iacs: 61, alpha20: 0.00403,
+      E: 69e9, iacs: 61, alpha20: 0.00403,
       Qc: 2.5e6, B: 228,
       thetaSC: 180,
       tempers: [
@@ -90,13 +90,41 @@
   // IEC 61439-1 Table 1 – minimum clearance in air (case A, pollution degree 3) [mm]
   var CLEARANCE_TABLE = { 2.5: 1.5, 4: 3, 6: 5.5, 8: 8, 12: 14 };
 
+  // IEC 60664-1 Table A.2 – altitude correction factors for clearances (1.00 up to 2000 m).
+  // IEC 61439-1 clause 7.1.4 only says that higher altitudes must be taken into account; these factors are not in IEC 61439-1.
+  var ALTITUDE_FACTORS = [[2000, 1.00], [3000, 1.14], [4000, 1.29], [5000, 1.48]];
+
+  // IEC 61439-1 Table 2 – minimum creepage distances [mm].
+  // Columns: Ui [V], PD1, PD2 (group I, II, IIIa/IIIb), PD3 (group I, II, IIIa, IIIb). null = blank in the standard
+  // (material group IIIb is not recommended in pollution degree 3 above 630 V).
+  var CREEPAGE_ROWS = [
+    [32, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5],
+    [40, 1.5, 1.5, 1.5, 1.5, 1.5, 1.6, 1.8, 1.8],
+    [50, 1.5, 1.5, 1.5, 1.5, 1.5, 1.7, 1.9, 1.9],
+    [63, 1.5, 1.5, 1.5, 1.5, 1.6, 1.8, 2, 2],
+    [80, 1.5, 1.5, 1.5, 1.5, 1.7, 1.9, 2.1, 2.1],
+    [100, 1.5, 1.5, 1.5, 1.5, 1.8, 2, 2.2, 2.2],
+    [125, 1.5, 1.5, 1.5, 1.5, 1.9, 2.1, 2.4, 2.4],
+    [160, 1.5, 1.5, 1.5, 1.6, 2, 2.2, 2.5, 2.5],
+    [200, 1.5, 1.5, 1.5, 2, 2.5, 2.8, 3.2, 3.2],
+    [250, 1.5, 1.5, 1.8, 2.5, 3.2, 3.6, 4, 4],
+    [320, 1.5, 1.6, 2.2, 3.2, 4, 4.5, 5, 5],
+    [400, 1.5, 2, 2.8, 4, 5, 5.6, 6.3, 6.3],
+    [500, 1.5, 2.5, 3.6, 5, 6.3, 7.1, 8, 8],
+    [630, 1.8, 3.2, 4.5, 6.3, 8, 9, 10, 10],
+    [800, 2.4, 4, 5.6, 8, 10, 11, 12.5, null],
+    [1000, 3.2, 5, 7.1, 10, 12.5, 14, 16, null],
+    [1250, 4.2, 6.3, 9, 12.5, 16, 18, 20, null],
+    [1600, 5.6, 8, 11, 16, 20, 22, 25, null]
+  ];
+
   // IEC 60865-1 Table 3 – factors β (stress) and α (support force)
   var SUPPORTS = {
-    ss:    { label: 'Single span, both ends simply supported', beta: 1.0, alphaA: 0.5, alphaB: 0.5 },
-    fs:    { label: 'Single span, one end fixed / one simply supported', beta: 0.73, alphaA: 0.625, alphaB: 0.375 },
-    ff:    { label: 'Single span, both ends fixed', beta: 0.5, alphaA: 0.5, alphaB: 0.5 },
-    cont2: { label: 'Continuous beam, 2 spans', beta: 0.73, alphaA: 0.375, alphaB: 1.25 },
-    cont3: { label: 'Continuous beam, 3 or more spans', beta: 0.73, alphaA: 0.4, alphaB: 1.1 }
+    ss:    { label: 'Single span, both ends simply supported', beta: 1.0, alphaA: 0.5, alphaB: 0.5, defl: 5 / 384 },
+    fs:    { label: 'Single span, one end fixed / one simply supported', beta: 0.73, alphaA: 0.625, alphaB: 0.375, defl: 0.00542 },
+    ff:    { label: 'Single span, both ends fixed', beta: 0.5, alphaA: 0.5, alphaB: 0.5, defl: 1 / 384 },
+    cont2: { label: 'Continuous beam, 2 spans', beta: 0.73, alphaA: 0.375, alphaB: 1.25, defl: 0.00541 },
+    cont3: { label: 'Continuous beam, 3 or more spans', beta: 0.73, alphaA: 0.4, alphaB: 1.1, defl: 0.00677 }
   };
 
   // Metric coarse bolts: nominal d, tensile stress area As [mm²], clearance hole (medium) and washer ODs [mm]
@@ -145,6 +173,8 @@
     // enclosure & environment
     Troom: 35, altitude: 0, ip: 'IP42', form: '3b', location: 'top',
     internalMode: 'estimate', Tinternal: 50, Tmax: 100, derate: 1.0,
+    // insulation coordination
+    Ui: 1000, pollution: 3, matGroup: 'IIIa', clrEncl: 50, creepPP: 40, creepPE: 40, creepReq: 0,
     // short-circuit mechanics
     support: 'cont3', span: 400, spacer: 400, vsvr: 1.0, vfvr: 2.7, q: 1.5,
     // short-circuit thermal
@@ -170,6 +200,31 @@
     var keys = Object.keys(CLEARANCE_TABLE).map(Number).sort(function (a, b) { return a - b; });
     for (var i = 0; i < keys.length; i++) if (UimpkV <= keys[i]) return CLEARANCE_TABLE[keys[i]];
     return CLEARANCE_TABLE[keys[keys.length - 1]];
+  }
+
+  // Multiplier on the minimum clearance for installations above 2000 m (linear interpolation of IEC 60664-1 Table A.2)
+  function altitudeFactor(alt) {
+    if (!(alt > 2000)) return 1;
+    for (var i = 1; i < ALTITUDE_FACTORS.length; i++) {
+      if (alt <= ALTITUDE_FACTORS[i][0]) {
+        var a = ALTITUDE_FACTORS[i - 1], b = ALTITUDE_FACTORS[i];
+        return a[1] + (b[1] - a[1]) * (alt - a[0]) / (b[0] - a[0]);
+      }
+    }
+    return ALTITUDE_FACTORS[ALTITUDE_FACTORS.length - 1][1];
+  }
+
+  // Required creepage from Table 2. Table 2 note b: 127/208/415/440/660/690/830 V may use the 125/200/400/630/800 V rows;
+  // other voltages use the next higher row. value is null where the table is blank (group IIIb above 630 V, PD3).
+  function creepageRequired(Ui, pd, mg) {
+    var map = { 127: 125, 208: 200, 415: 400, 440: 400, 660: 630, 690: 630, 830: 800 };
+    var eff = map[Ui] || Ui, row = null, i;
+    for (i = 0; i < CREEPAGE_ROWS.length; i++) { if (CREEPAGE_ROWS[i][0] >= eff) { row = CREEPAGE_ROWS[i]; break; } }
+    if (!row) return { value: null, row: null, note: 'Rated insulation voltage is above the 1 600 V range of Table 2.' };
+    var col = pd === 1 ? 1 : pd === 2 ? (mg === 'I' ? 2 : mg === 'II' ? 3 : 4) : (mg === 'I' ? 5 : mg === 'II' ? 6 : mg === 'IIIa' ? 7 : 8);
+    var v = row[col];
+    var note = (pd === 3 && mg === 'IIIb' && row[0] > 630) ? 'Material group IIIb is not recommended in pollution degree 3 above 630 V (Table 2 note a) – use group IIIa or better.' : null;
+    return { value: v === undefined ? null : v, row: row[0], note: note };
   }
 
   function airPressure(altitude) {
@@ -479,6 +534,12 @@
       lsmax = allowS > 0 ? Math.sqrt(16 * Zs * allowS * 1e6 / (inp.vsvr * Fspm)) : 0;
     }
 
+    // elastic mid-span deflection of the main conductor under the peak force (static estimate, scaled by the stress factor)
+    var mat = MATERIALS[inp.material] || MATERIALS.Cu;
+    var Im = g.arr === 'face' ? g.n * g.h * g.t * g.t * g.t / 12 : g.n * g.t * g.h * g.h * g.h / 12;
+    res.EI = mat.E * Im;
+    res.deflection = inp.vsvr * sup.defl * Fm3pm * l * l * l * l / res.EI;   // m
+    res.elastic = sigM <= rp;
     res.peak = pk; res.ip = ip; res.am = am; res.as = as;
     res.Fm3pm = Fm3pm; res.Fm3 = Fm3; res.F2simple = F2simple; res.Fspm = Fspm; res.Fs = Fs;
     res.Zm = Zm; res.Zs = Zs; res.sigM = sigM; res.sigS = sigS; res.sigTot = sigTot;
@@ -565,7 +626,7 @@
     o.formConv = Object.assign({}, FORM_CONV_DEFAULT, (inp && inp.formConv) || {});
     ['In', 'freq', 'Icw', 'tk', 'peakFactor', 'Uimp', 'rp', 'iacs', 'width', 'thick', 'nBars', 'gap', 'eps', 'runLength',
      'phaseSpacing', 'Troom', 'altitude', 'Tinternal', 'Tmax', 'derate', 'span', 'spacer', 'vsvr', 'vfvr', 'q',
-     'thetaSC', 'preloadPct', 'overlap'].forEach(function (k) { o[k] = Number(o[k]); });
+     'thetaSC', 'preloadPct', 'overlap', 'Ui', 'pollution', 'clrEncl', 'creepPP', 'creepPE', 'creepReq'].forEach(function (k) { o[k] = Number(o[k]); });
     o.nBars = Math.max(1, Math.round(o.nBars));
     if (o.finish !== 'custom' && FINISHES[o.finish]) o.eps = FINISHES[o.finish].eps;
     return o;
@@ -592,9 +653,11 @@
     if (inp.nBars > 1 && inp.gap < inp.thick) warnings.push('Gap between parallel bars is smaller than the bar thickness – cooling between bars is impaired.');
 
     var clearance = (g.arr === 'face' ? g.a - g.D : g.a - g.h) * 1000;
-    var clearanceMin = minClearance(inp.Uimp);
+    var altFactor = altitudeFactor(inp.altitude);
+    var clearanceBase = minClearance(inp.Uimp);
+    var clearanceMin = clearanceBase * altFactor;
     if (clearance <= 0) errors.push('Phase centre spacing is too small – the phase packs overlap.');
-    else if (clearance < clearanceMin) warnings.push('Phase-to-phase clearance ' + clearance.toFixed(1) + ' mm is below the IEC 61439-1 minimum of ' + clearanceMin + ' mm for Uimp = ' + inp.Uimp + ' kV.');
+    if (!(inp.clrEncl > 0)) errors.push('Distance from live parts to the enclosure must be greater than zero.');
 
     // environment
     var p = airPressure(inp.altitude);
@@ -608,10 +671,9 @@
     }
     var convFactor = Number(inp.formConv[inp.form]) || 1;
     var env = { p: p, mounting: inp.mounting, runLength: inp.runLength / 1000, convFactor: convFactor, eps: inp.eps };
-    if (inp.altitude > 2000) warnings.push('Altitude above 2000 m: IEC 61439-1 also requires dielectric (clearance) correction – not included here.');
     if (inp.Tmax <= Tint) errors.push('Maximum busbar temperature must be higher than the internal air temperature (' + Tint.toFixed(1) + ' °C).');
 
-    var result = { inputs: inp, errors: errors, warnings: warnings, geometry: g, S: Smm2, clearance: clearance, clearanceMin: clearanceMin,
+    var result = { inputs: inp, errors: errors, warnings: warnings, geometry: g, S: Smm2, clearance: clearance, clearanceMin: clearanceMin, clearanceBase: clearanceBase, altFactor: altFactor,
                    Tint: Tint, TintParts: TintParts, pressure: p, convFactor: convFactor, material: mat, rho20: rho20, alpha: alpha };
     if (errors.length) return result;
 
@@ -666,10 +728,43 @@
     result.mech = mechanical(g, inp, inp.rp, opts.coarse);
     if (inp.span > result.mech.lmax) warnings.push('Support span exceeds the maximum permissible span for the short-circuit stress.');
 
+    // clearances and creepage (IEC 61439-1 clause 8.3 / 10.4), including bar movement during the fault (clause 10.11)
+    var defl = result.mech.deflection * 1000;
+    var cr = creepageRequired(inp.Ui, inp.pollution, inp.matGroup);
+    var creepReq = inp.creepReq > 0 ? inp.creepReq : cr.value;
+    var ins = {
+      Ui: inp.Ui, pollution: inp.pollution, matGroup: inp.matGroup, altFactor: altFactor, clearBase: clearanceBase, clearMin: clearanceMin,
+      clearPP: clearance, clearEncl: inp.clrEncl, deflection: defl, elastic: result.mech.elastic,
+      clearPPfault: clearance - 2 * defl, clearEnclFault: inp.clrEncl - defl,
+      creepReq: creepReq, creepSource: inp.creepReq > 0 ? 'user' : (cr.value === null ? 'none' : 'table'), creepRow: cr.row,
+      creepPP: inp.creepPP, creepPE: inp.creepPE
+    };
+    ins.okClearPP = clearance >= clearanceMin;
+    ins.okClearEncl = inp.clrEncl >= clearanceMin;
+    ins.okFaultPP = ins.clearPPfault >= clearanceMin;
+    ins.okFaultEncl = ins.clearEnclFault >= clearanceMin;
+    // clause 8.3.3: creepage must never be less than the associated minimum clearance
+    ins.creepNeed = Math.max(clearanceMin, creepReq || 0);
+    var creepOk = function (v) { return v < ins.creepNeed ? false : (creepReq === null ? null : true); };
+    ins.okCreepPP = creepOk(inp.creepPP);
+    ins.okCreepPE = creepOk(inp.creepPE);
+    // clauses 8.3.1 / 10.11.5.5: only a PERMANENT reduction of clearances by the fault is prohibited. While the bars stay
+    // elastic the transient movement is advisory; once they yield, the estimated movement must still leave the minimum clearance.
+    ins.ok = ins.okClearPP && ins.okClearEncl && (ins.elastic || (ins.okFaultPP && ins.okFaultEncl)) && ins.okCreepPP !== false && ins.okCreepPE !== false;
+    result.insul = ins;
+    if (!ins.okClearPP) warnings.push('Phase-to-phase clearance ' + clearance.toFixed(1) + ' mm is below the IEC 61439-1 minimum of ' + clearanceMin.toFixed(1) + ' mm.');
+    if (!ins.okClearEncl) warnings.push('Distance to the enclosure ' + inp.clrEncl.toFixed(1) + ' mm is below the minimum clearance of ' + clearanceMin.toFixed(1) + ' mm.');
+    var tail = ins.elastic ? ' – transient only, the bars stay elastic (advisory).' : ' and the bars would yield, so the reduction may become permanent.';
+    if (ins.okClearPP && !ins.okFaultPP) warnings.push('Phase-to-phase clearance falls to ' + ins.clearPPfault.toFixed(1) + ' mm during a short circuit (minimum ' + clearanceMin.toFixed(1) + ' mm)' + tail);
+    if (ins.okClearEncl && !ins.okFaultEncl) warnings.push('Distance to the enclosure falls to ' + ins.clearEnclFault.toFixed(1) + ' mm during a short circuit (minimum ' + clearanceMin.toFixed(1) + ' mm)' + tail);
+    if (creepReq === null) warnings.push('Table 2 has no creepage value for Ui ' + inp.Ui + ' V / pollution degree ' + inp.pollution + ' / group ' + inp.matGroup + ' – enter the value you are using under "Required creepage".');
+    if (cr.note) warnings.push(cr.note);
+    if (!result.mech.elastic) warnings.push('Main-conductor stress exceeds Rp0.2: the bars would deform permanently, so the elastic deflection used for the fault clearance is an under-estimate.');
+
     // bolted joint
     if (!opts.skipJoint) result.joint = boltedJoint(inp, inp.rp);
 
-    result.ok = result.thermal.ok && result.sc.ok && result.mech.ok && clearance >= clearanceMin;
+    result.ok = result.thermal.ok && result.sc.ok && result.mech.ok && result.insul.ok;
     return result;
   }
 
@@ -685,7 +780,7 @@
         var r;
         try { r = calculate(cand, { coarse: true, skipJoint: true }); } catch (e) { continue; }
         if (r.errors.length || !r.thermal) continue;
-        var clearOk = r.clearance >= r.clearanceMin;
+        var clearOk = r.insul.ok;
         out.push({
           width: w, thick: t, n: n, gap: cand.gap, S: r.S, Iperm: r.thermal.Iperm, Top: r.thermal.Top,
           util: r.thermal.utilisation, scOk: r.sc.ok, mechUtil: r.mech.sigTot / r.mech.limTot, mechOk: r.mech.ok,
@@ -699,11 +794,12 @@
   }
 
   return {
-    version: '1.0.0',
+    version: '1.1.0',
     MATERIALS: MATERIALS, STANDARD_SIZES: STANDARD_SIZES, FINISHES: FINISHES, IP_CLASSES: IP_CLASSES,
     IP_RISE_DEFAULT: IP_RISE_DEFAULT, FORMS: FORMS, FORM_RISE_DEFAULT: FORM_RISE_DEFAULT, FORM_CONV_DEFAULT: FORM_CONV_DEFAULT,
     LOCATION_FACTOR: LOCATION_FACTOR, PEAK_TABLE: PEAK_TABLE, CLEARANCE_TABLE: CLEARANCE_TABLE, SUPPORTS: SUPPORTS,
     BOLTS: BOLTS, GRADES: GRADES, LUBRICATION: LUBRICATION, WASHERS: WASHERS, DEFAULT_INPUTS: DEFAULT_INPUTS,
+    altitudeFactor: altitudeFactor, creepageRequired: creepageRequired, CREEPAGE_ROWS: CREEPAGE_ROWS,
     calculate: calculate, autoSize: autoSize, peakFactor: peakFactor, minClearance: minClearance,
     airProps: airProps, airPressure: airPressure, hVertical: hVertical, hChannel: hChannel,
     solveCurrentDistribution: solveCurrentDistribution, thermalShortCircuit: thermalShortCircuit,

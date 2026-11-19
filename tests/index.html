@@ -141,6 +141,37 @@
     truthy('Flat-mounted 2-bar pack rated lower than on edge', fl.thermal.Iperm < r0.thermal.Iperm, r0.thermal.Iperm.toFixed(0) + ' → ' + fl.thermal.Iperm.toFixed(0) + ' A');
     truthy('Operating temp at Iperm ≈ Tmax', Math.abs(BC.calculate(base({ In: r0.thermal.Iperm })).thermal.Top - 100) < 0.5, '');
 
+    // --- insulation coordination (values from IEC 61439-1 Tables 1 and 2)
+    check('Creepage 1000 V / PD3 / IIIa = 16 mm', BC.creepageRequired(1000, 3, 'IIIa').value, 16, 16);
+    check('Creepage 690 V uses the 630 V row: PD3 / IIIa = 10 mm', BC.creepageRequired(690, 3, 'IIIa').value, 10, 10);
+    check('Creepage 690 V row used', BC.creepageRequired(690, 3, 'IIIa').row, 630, 630);
+    check('Creepage 400 V / PD3 / II = 5.6 mm', BC.creepageRequired(400, 3, 'II').value, 5.6, 5.6);
+    check('Creepage 415 V uses the 400 V row', BC.creepageRequired(415, 2, 'II').value, 2.8, 2.8);
+    check('Creepage 630 V / PD1 = 1.8 mm', BC.creepageRequired(630, 1, 'I').value, 1.8, 1.8);
+    check('Creepage 800 V / PD2 / IIIb = 8 mm', BC.creepageRequired(800, 2, 'IIIb').value, 8, 8);
+    check('Creepage 1250 V / PD3 / IIIa = 20 mm', BC.creepageRequired(1250, 3, 'IIIa').value, 20, 20);
+    truthy('Creepage PD3 / IIIb above 630 V is blank (not recommended)', BC.creepageRequired(1000, 3, 'IIIb').value === null && !!BC.creepageRequired(1000, 3, 'IIIb').note, '');
+    check('Altitude factor <= 2000 m', BC.altitudeFactor(1700), 1, 1);
+    check('Altitude factor 3000 m', BC.altitudeFactor(3000), 1.14, 1.14);
+    check('Altitude factor 2500 m (interpolated)', BC.altitudeFactor(2500), 1.069, 1.071);
+    var ri = BC.calculate(base());
+    var EIhand = 120e9 * (2 * 0.1 * Math.pow(0.01, 3) / 12);
+    var dhand = 0.00677 * ri.mech.Fm3pm * Math.pow(0.4, 4) / EIhand;
+    check('Deflection matches hand calculation (ratio)', ri.insul.deflection / 1000 / dhand, 0.9999, 1.0001);
+    check('Fault phase clearance = gap - 2 deflection', ri.insul.clearPPfault, ri.insul.clearPP - 2 * ri.insul.deflection - 1e-9, ri.insul.clearPP - 2 * ri.insul.deflection + 1e-9);
+    truthy('Defaults pass insulation checks', ri.insul.ok && ri.insul.okCreepPP === true, 'min clearance ' + ri.insul.clearMin + ' mm, deflection ' + ri.insul.deflection.toFixed(2) + ' mm');
+    truthy('Longer span increases deflection', BC.calculate(base({ span: 600 })).insul.deflection > ri.insul.deflection, '');
+    truthy('Small enclosure distance fails the check', BC.calculate(base({ clrEncl: 5 })).insul.ok === false, '');
+    var ra = BC.calculate(base({ clrEncl: 9 }));
+    truthy('Elastic transient shortfall is advisory (flagged, still passes)', ra.insul.okFaultEncl === false && ra.insul.elastic && ra.insul.ok, 'fault clearance ' + ra.insul.clearEnclFault.toFixed(2) + ' mm');
+    var rp = BC.calculate(base({ clrEncl: 8.5, span: 1000 }));
+    truthy('Yielding bars with insufficient clearance fail', !rp.insul.elastic && rp.insul.okFaultEncl === false && rp.insul.ok === false, '');
+    truthy('Short creepage fails', BC.calculate(base({ creepPP: 10 })).insul.okCreepPP === false, '');
+    truthy('Creepage below the clearance fails even with no Table 2 value', BC.calculate(base({ matGroup: 'IIIb', creepPP: 5 })).insul.okCreepPP === false, '');
+    truthy('No Table 2 value -> creepage not evaluated (null)', BC.calculate(base({ matGroup: 'IIIb' })).insul.okCreepPP === null, '');
+    truthy('Override creepage is used', BC.calculate(base({ matGroup: 'IIIb', creepReq: 20, creepPP: 25 })).insul.okCreepPP === true, '');
+    truthy('Altitude 4000 m raises the minimum clearance', BC.calculate(base({ altitude: 4000 })).insul.clearMin > 8, '');
+
     // --- performance
     var t0 = performance.now();
     BC.calculate(base({ nBars: 4 }));

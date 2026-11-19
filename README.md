@@ -13,6 +13,7 @@ It's a static site (HTML/CSS/JavaScript, no build step), so you can host it on G
 | **AC effects** | Frequency | R<sub>ac</sub>/R<sub>dc</sub> (skin + proximity), current sharing between parallel bars, current-density map |
 | **Short-circuit thermal** | I<sub>cw</sub>, duration, max. fault temperature | S<sub>min</sub>, end-of-fault temperature, withstand current of the section |
 | **Short-circuit mechanical** (IEC 60865-1) | Peak factor (IEC 61439-1 Table 7), support type, span, spacer interval | Peak current, **peak force** on the centre phase and between sub-conductors, stresses vs. q·R<sub>p0.2</sub>, **maximum support span**, support (insulator) forces |
+| **Insulation coordination** | Uimp, Uᵢ, pollution degree, material group, distance to enclosure, creepage across supports and to earth | Minimum clearance (Table 1, with altitude correction), creepage from Table 2, bar deflection during a fault, clearance and creepage at rest and after the fault |
 | **Bolted joints** | Bolt size/count (auto from bar width), grade, thread condition (nut factor), preload %, washers, overlap | Preload, **tightening torque**, contact pressure, washer bearing pressure, torque table M6–M20 |
 | **Section finder** | All of the above | The lightest standard sections (1–4 bars per phase) that pass every check |
 
@@ -31,6 +32,7 @@ To share a calculation, click **Copy share link**. Your inputs are stored in the
   * F<sub>m3</sub> = (μ₀/2π)(√3/2)i<sub>p</sub>²·l/a<sub>m</sub>
   * σ<sub>m</sub> = V<sub>σ</sub>V<sub>r</sub>·β·F<sub>m3</sub>·l/(8Z)
   * The effective distances a<sub>m</sub> and a<sub>s</sub> are integrated numerically for the actual rectangular sections.
+* **Clearance and creepage:** minimum clearance from IEC 61439-1 Table 1 for Uimp, multiplied by an altitude factor from IEC 60664-1 Table A.2 (not part of IEC 61439-1, which only requires altitude to be taken into account). Creepage is taken from the full Table 2 and is never less than the clearance. A fault may not *permanently* reduce either (clauses 8.3.1 and 10.11.5.5): the elastic bar deflection under the peak force is shown against the clearances (2δ phase-to-phase, δ to the enclosure) and only becomes a failure if the bars yield.
 * **Joints:** preload = % × proof stress × A<sub>s</sub> (ISO 898-1 / ISO 3506-1), torque T = K·F·d. Bolt patterns follow common practice (cf. DIN 43673 / CDA Pub. 22).
 
 All formulas, assumptions and references are also listed on the page under *Method, assumptions and references*.
@@ -42,7 +44,7 @@ This tool is an **engineering aid**. It does not replace the IEC 61439-1 Clause 
 * Heat from adjacent devices, forced ventilation or solar gain
 * Harmonics (apply them through the derating factor) and DC systems
 * Neutral/PE sizing
-* Dielectric correction above 2000 m
+* Arc-fault containment (IEC TR 61641) and deformation of the enclosure or barriers
 * Dynamic (natural-frequency) reduction of the short-circuit forces. Leaving this out is conservative.
 
 ## Project layout

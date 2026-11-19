@@ -64,6 +64,15 @@
       { id: 'Tmax', label: 'Max. busbar temperature', unit: '°C', type: 'number', step: 1, hint: '35 °C + 65 K = 100 °C (105 °C plated joints)' },
       { id: 'derate', label: 'Additional derating factor', type: 'number', min: 0.3, max: 1.2, step: 0.01, hint: 'Harmonics, unbalance, margin' }
     ] },
+    { id: 'insul', title: 'Insulation coordination', open: true, fields: [
+      { id: 'Ui', label: 'Rated insulation voltage Uᵢ', type: 'select', options: [['250', '250 V'], ['400', '400 V'], ['500', '500 V'], ['630', '630 V'], ['690', '690 V (630 V row)'], ['800', '800 V'], ['1000', '1000 V'], ['1250', '1250 V']] },
+      { id: 'pollution', label: 'Pollution degree', type: 'select', options: [['1', '1'], ['2', '2'], ['3', '3 (industrial)']] },
+      { id: 'matGroup', label: 'Insulating material group', type: 'select', full: true, options: [['I', 'I (CTI ≥ 600)'], ['II', 'II (400 ≤ CTI < 600)'], ['IIIa', 'IIIa (175 ≤ CTI < 400)'], ['IIIb', 'IIIb (100 ≤ CTI < 175)']] },
+      { id: 'clrEncl', label: 'Live part to enclosure / earthed part', unit: 'mm', type: 'number', min: 1, step: 5, hint: 'Shortest air gap, bars at rest' },
+      { id: 'creepPP', label: 'Creepage across supports, phase–phase', unit: 'mm', type: 'number', min: 1, step: 5 },
+      { id: 'creepPE', label: 'Creepage, phase–earth', unit: 'mm', type: 'number', min: 1, step: 5 },
+      { id: 'creepReq', label: 'Required creepage override', unit: 'mm', type: 'number', min: 0, step: 0.5, hint: '0 = use IEC 61439-1 Table 2. Ribs ≥ 2 mm high allow 0.8 × Table 2, never below the clearance' }
+    ] },
     { id: 'mech', title: 'Short-circuit mechanics', open: false, fields: [
       { id: 'support', label: 'Support arrangement', type: 'select', full: true, options: opt(BC.SUPPORTS) },
       { id: 'span', label: 'Support span l', unit: 'mm', type: 'number', min: 50, step: 25 },
@@ -271,7 +280,7 @@
     if (!th.ok) fails.push('Continuous rating: Iₙ = ' + fmt(inp.In) + ' A exceeds the permissible ' + fmt(th.Iperm) + ' A.');
     if (!sc.ok) fails.push('Short-circuit thermal: cross-section ' + fmt(sc.S) + ' mm² is below the required ' + fmt(sc.Smin) + ' mm².');
     if (!me.ok) fails.push('Short-circuit mechanical: conductor stress exceeds the permissible value – reduce the support span or spacer interval, or increase the bar section / phase spacing.');
-    if (r.clearance < r.clearanceMin) fails.push('Phase clearance below the IEC 61439-1 minimum.');
+    if (!r.insul.ok) fails.push('Clearance / creepage: ' + insulFails(r.insul) + '.');
 
     html += '<div class="print-only"><h2 style="font-size:16px;margin-bottom:6px">Calculation report — ' + esc(describeSection(inp)) + '</h2><p class="muted">' + new Date().toLocaleString() + ' · ' + esc(location.href) + '</p></div>';
 
@@ -289,6 +298,7 @@
       kpi('Hottest bar at Iₙ (' + PHASE[th.hottest.idx] + ')', isFinite(th.Top) && th.Top <= inp.Tmax, (isFinite(th.Top) ? fmt(th.Top, 1) : '>' + fmt(r.Tint + 400)) + ' <small>°C</small>', 'Air ' + fmt(r.Tint, 1) + ' °C · limit ' + fmt(inp.Tmax) + ' °C · rise over room ' + fmt(th.riseAboveRoom, 1) + ' K', tempFrac) +
       kpi('Short-circuit thermal', sc.ok, fmt(sc.S) + ' <small>mm²</small>', 'Needs ≥ ' + fmt(sc.Smin) + ' mm² · end temp. ' + fmt(sc.thetaEnd) + ' °C', sc.Smin / sc.S) +
       kpi('Short-circuit stress', me.ok, fmt(me.sigTot) + ' <small>MPa</small>', 'Limit ' + fmt(me.limTot) + ' MPa · max span ' + fmt(me.lmax, 0) + ' mm', me.sigTot / me.limTot) +
+      kpi('Clearance during a fault', r.insul.ok, fmt(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 1) + ' <small>mm</small>', 'Minimum ' + fmt(r.insul.clearMin, 1) + ' mm · bars deflect ' + fmt(r.insul.deflection, 1) + ' mm' + (r.insul.elastic ? ' (elastic)' : ' (yielding)'), r.insul.clearMin / Math.max(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 0.001)) +
       (jt ? kpi('Joint tightening torque', null, fmt(jt.torque, jt.torque < 20 ? 1 : 0) + ' <small>N·m</small>', jt.count + ' × ' + jt.size + ' ' + esc(inp.grade) + ' · preload ' + fmt(jt.preload.F / 1000, 1) + ' kN each', null) : '') +
       '</div>';
 
@@ -298,7 +308,7 @@
       (inp.mounting === 'flat' ? 'bars flat' : inp.mounting === 'vertical' ? 'vertical run (plan view)' : 'bars on edge') + '. Shading shows current density relative to a uniform (DC) distribution at ' + fmt(inp.freq) + ' Hz.</p>' +
       '<div class="grid-2 grid-xsec"><div>' + drawSection(r) + '</div><div>' + sharingTable(r) + '</div></div></div>';
 
-    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + (jt ? jointPanel(r) : '') + autosizePanel() + methodPanel() + inputsSummary(r);
+    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + (jt ? jointPanel(r) : '') + autosizePanel() + methodPanel() + inputsSummary(r);
     return html;
   }
 
@@ -473,6 +483,51 @@
       '</table><p class="muted" style="font-size:12px">Busbar supports must have a rated cantilever / tensile strength above F<sub>d</sub> (with V<sub>F</sub>·V<sub>r</sub> = ' + fmt(inp.vfvr, 1) + '). Sub-conductors are assumed to act independently (no stiffening spacers), which is conservative.</p></div></div></details>';
   }
 
+  function insulFails(s) {
+    var m = [];
+    if (!s.okClearPP) m.push('phase-to-phase clearance ' + fmt(s.clearPP, 1) + ' mm below ' + fmt(s.clearMin, 1) + ' mm');
+    if (!s.okClearEncl) m.push('distance to enclosure ' + fmt(s.clearEncl, 1) + ' mm below ' + fmt(s.clearMin, 1) + ' mm');
+    if (!s.elastic && s.okClearPP && !s.okFaultPP) m.push('phase-to-phase clearance may fall to ' + fmt(s.clearPPfault, 1) + ' mm after the fault');
+    if (!s.elastic && s.okClearEncl && !s.okFaultEncl) m.push('distance to enclosure may fall to ' + fmt(s.clearEnclFault, 1) + ' mm after the fault');
+    if (s.okCreepPP === false) m.push('phase-to-phase creepage ' + fmt(s.creepPP, 1) + ' mm below ' + fmt(s.creepNeed, 1) + ' mm');
+    if (s.okCreepPE === false) m.push('phase-to-earth creepage ' + fmt(s.creepPE, 1) + ' mm below ' + fmt(s.creepNeed, 1) + ' mm');
+    return m.join('; ');
+  }
+
+  function insulRow(label, provided, required, ok, advisory) {
+    var b = ok === null ? '<span class="badge warn">ENTER VALUE</span>' : (!ok && advisory ? '<span class="badge warn">ADVISORY</span>' : badge(ok));
+    return '<tr><td>' + label + '</td><td class="num">' + fmt(provided, 1) + ' mm</td><td class="num">≥ ' + fmt(required, 1) + ' mm</td><td>' + b + '</td></tr>';
+  }
+
+  function insulPanel(r) {
+    var s = r.insul, inp = r.inputs;
+    var head = !s.ok ? badge(false) : (s.okCreepPP === null || s.okCreepPE === null) ? '<span class="badge warn">CHECK CREEPAGE</span>' : !(s.okFaultPP && s.okFaultEncl) ? '<span class="badge warn">ADVISORY</span>' : badge(true);
+    var src = s.creepSource === 'user' ? 'override entered by you' : s.creepSource === 'table' ? 'IEC 61439-1 Table 2 (Uᵢ row ' + s.creepRow + ' V, pollution degree ' + s.pollution + ', group ' + esc(s.matGroup) + ')' : 'Table 2 has no value for this combination';
+    return '<details class="card panel" open><summary><span>Clearances and creepage (IEC 61439-1 clause 8.3)</span>' + head + '</summary>' +
+      '<div class="grid-2"><div><table class="data"><tr><th>Check</th><th class="r">Provided</th><th class="r">Required</th><th></th></tr>' +
+      insulRow('Clearance phase–phase, at rest', s.clearPP, s.clearMin, s.okClearPP) +
+      insulRow('Clearance live part–enclosure, at rest', s.clearEncl, s.clearMin, s.okClearEncl) +
+      insulRow('Clearance phase–phase, during fault', s.clearPPfault, s.clearMin, s.okFaultPP, s.elastic) +
+      insulRow('Clearance live part–enclosure, during fault', s.clearEnclFault, s.clearMin, s.okFaultEncl, s.elastic) +
+      insulRow('Creepage phase–phase (across supports)', s.creepPP, s.creepNeed, s.okCreepPP) +
+      insulRow('Creepage phase–earth', s.creepPE, s.creepNeed, s.okCreepPE) +
+      '</table></div><div><table class="data">' +
+      '<tr><td>Rated impulse withstand voltage Uimp</td><td class="num">' + fmt(inp.Uimp) + ' kV</td></tr>' +
+      '<tr><td>Table 1 clearance (inhomogeneous field, PD3)</td><td class="num">' + fmt(s.clearBase, 1) + ' mm</td></tr>' +
+      '<tr><td>Altitude factor (' + fmt(inp.altitude) + ' m)</td><td class="num">× ' + fmt(s.altFactor, 2) + '</td></tr>' +
+      '<tr class="highlight"><td><strong>Minimum clearance</strong></td><td class="num"><strong>' + fmt(s.clearMin, 1) + ' mm</strong></td></tr>' +
+      '<tr><td>Rated insulation voltage Uᵢ · pollution degree · material group</td><td class="num">' + fmt(s.Ui) + ' V · ' + s.pollution + ' · ' + esc(s.matGroup) + '</td></tr>' +
+      '<tr><td>Table 2 creepage</td><td class="num">' + (s.creepReq === null ? 'no value' : fmt(s.creepReq, 1) + ' mm') + '</td></tr>' +
+      '<tr class="sub"><td colspan="2">Source: ' + src + '. Creepage must also be at least the minimum clearance.</td></tr>' +
+      '<tr><td>Main-conductor deflection under peak force</td><td class="num">' + fmt(s.deflection, 2) + ' mm</td></tr>' +
+      '<tr class="sub"><td colspan="2">' + (s.elastic ? 'Stress within Rp0.2: the bars spring back, so clearances are restored after the fault.' : 'Stress exceeds Rp0.2: permanent deformation is possible, so the clearance after the fault is checked against the estimated movement.') + '</td></tr>' +
+      '</table></div></div>' +
+      '<ul class="notes muted"><li>Clause 8.3.1: the same clearances and creepage apply phase to phase and from live parts to earth (enclosure, earthed barriers). Bare conductors must be at least equal to the equipment they connect to.</li>' +
+      '<li>Clauses 8.3.1 and 10.11.5.5: a short circuit must not <em>permanently</em> reduce clearances or creepage. Bars that stay elastic recover, so transient movement is shown as advisory. If the bars yield, the estimated movement must still leave the minimum clearance.</li>' +
+      '<li>Fault clearance: phase-to-phase is reduced by twice the main-conductor deflection (both neighbours may move toward each other); the enclosure distance by one deflection. The deflection is a static elastic estimate under the peak force, scaled by Vσ·Vr – a screening value. Enclosure or barrier deformation is not modelled.</li>' +
+      '<li>The altitude factor is from IEC 60664-1 Table A.2; IEC 61439-1 clause 7.1.4 only says that altitude above 2000 m must be taken into account. Clearances and creepage are verified by measurement (clause 10.4, Annex F) or the clause 10.9.3 impulse test.</li></ul></details>';
+  }
+
   function jointPanel(r) {
     var j = r.joint, inp = r.inputs;
     var rows = j.table.map(function (t) {
@@ -514,7 +569,7 @@
       '<h4>4. Short-circuit thermal</h4><p>Adiabatic heating from the operating temperature θᵢ to θ<sub>f</sub>: <span class="formula">S<sub>min</sub> = I<sub>cw</sub>√t / k</span> with k = K·√ln((θ<sub>f</sub>+β)/(θᵢ+β)), K = √(Q<sub>c</sub>(β+20)/ρ<sub>20</sub>) (IEC 60949). Recommended θ<sub>f</sub>: 200 °C copper, 180 °C aluminium (IEC 60865-1).</p>' +
       '<h4>5. Short-circuit forces (IEC 60865-1 simplified method)</h4><p>i<sub>p</sub> = n·I<sub>cw</sub> with n from IEC 61439-1 Table 7. Centre-phase force F<sub>m3</sub> = (μ₀/2π)(√3/2)i<sub>p</sub>²l/a<sub>m</sub>; sub-conductor force F<sub>s</sub> = (μ₀/2π)(i<sub>p</sub>/n)²lₛ/aₛ. Effective distances a<sub>m</sub>, aₛ are integrated numerically for the actual rectangular sections. Stresses σ<sub>m</sub> = V<sub>σ</sub>V<sub>r</sub>βF<sub>m3</sub>l/(8Z<sub>m</sub>), σₛ = V<sub>σ</sub>V<sub>r</sub>Fₛlₛ/(16Zₛ); require σ<sub>tot</sub> ≤ q·R<sub>p0.2</sub> and σₛ ≤ R<sub>p0.2</sub>. Support force F<sub>d</sub> = V<sub>F</sub>V<sub>r</sub>·α·F<sub>m3</sub>. Natural-frequency (dynamic) reduction factors are not applied (conservative).</p>' +
       '<h4>6. Bolted joints</h4><p>Preload F = (% of proof)·A<sub>s</sub>·R<sub>p</sub> (ISO 898-1 / ISO 3506-1); torque <span class="formula">T = K·F·d</span>. Bolt patterns follow common practice (cf. DIN 43673 / CDA Pub. 22). Checks: mean contact pressure over the overlap and washer bearing pressure vs. the bar\'s 0.2 % proof stress.</p>' +
-      '<h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, clearance correction above 2000 m.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
+      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment (IEC TR 61641), deformation of the enclosure or barriers.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
       '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
   }
 
