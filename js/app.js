@@ -60,7 +60,7 @@
       { id: 'ip', label: 'IP rating', type: 'select', options: BC.IP_CLASSES.map(function (c) { return [c, c]; }) },
       { id: 'form', label: 'Form of separation', type: 'select', options: BC.FORMS.map(function (f) { return [f, 'Form ' + f]; }) },
       { id: 'location', label: 'Busbar position in board', type: 'select', options: [['top', 'Top (main busbar)'], ['middle', 'Middle'], ['bottom', 'Bottom']] },
-      { id: 'internalMode', label: 'Internal air temperature', type: 'select', options: [['estimate', 'Estimate from IP & form'], ['specify', 'Specify / measured']] },
+      { id: 'internalMode', label: 'Internal air temperature', type: 'select', options: [['estimate', 'Estimate from IP & form'], ['board', 'From the board cooling calculation (losses, enclosure, fans)'], ['specify', 'Specify / measured']] },
       { id: 'Tinternal', label: 'Internal air temp. at busbars', unit: '°C', type: 'number', step: 1, show: function (s) { return s.internalMode === 'specify'; } },
       { id: 'Tmax', label: 'Max. busbar temperature', unit: '°C', type: 'number', step: 1, hint: '35 °C + 65 K = 100 °C (105 °C plated joints)' },
       { id: 'derate', label: 'Additional derating factor', type: 'number', min: 0.3, max: 1.2, step: 0.01, hint: 'Harmonics, unbalance, margin' }
@@ -164,6 +164,23 @@
       { id: 'arcTmax', label: 'Arcing time at maximum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'Clearing time of the protection upstream of the fault', show: function (s) { return s.arcSource === 'manual'; } },
       { id: 'arcTmin', label: 'Arcing time at minimum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'The arc current is lower, so the protection may be slower', show: function (s) { return s.arcSource === 'manual'; } }
     ] },
+    { id: 'therm', title: 'Board cooling & fans', open: false, fields: [
+      { id: 'thermW', label: 'Board width', unit: 'mm', type: 'number', min: 100, step: 50, hint: 'Body size without the plinth' },
+      { id: 'thermH', label: 'Board height', unit: 'mm', type: 'number', min: 100, step: 50 },
+      { id: 'thermD', label: 'Board depth', unit: 'mm', type: 'number', min: 100, step: 50 },
+      { id: 'thermK', label: 'Enclosure material', type: 'select', options: [['5.5', 'Painted sheet steel (5.5 W/m²K)'], ['4.5', 'Stainless steel (4.5 W/m²K)'], ['12', 'Aluminium (12 W/m²K)'], ['3.5', 'Plastic (3.5 W/m²K)']] },
+      { id: 'thermTop', label: 'Top', type: 'select', options: [['exposed', 'Exposed'], ['covered', 'Covered']] },
+      { id: 'thermRear', label: 'Rear', type: 'select', options: [['exposed', 'Free, air gap behind'], ['wall', 'Against a wall']] },
+      { id: 'thermLeft', label: 'Left side', type: 'select', options: [['exposed', 'Exposed'], ['wall', 'Against a wall'], ['adjoining', 'Adjoining cubicle']] },
+      { id: 'thermRight', label: 'Right side', type: 'select', options: [['exposed', 'Exposed'], ['wall', 'Against a wall'], ['adjoining', 'Adjoining cubicle']] },
+      { id: 'thermTi', label: 'Allowed air temperature inside', unit: '°C', type: 'number', step: 1, hint: 'Breakers are usually rated for 40 °C air around them. Check the derating tables before raising it' },
+      { id: 'thermMargin', label: 'Airflow margin for dirty filters', unit: '%', type: 'number', min: 0, step: 5 },
+      { id: 'thermTbar', label: 'Conductor temperature for the other conductors', unit: '°C', type: 'number', step: 5 },
+      { id: 'thermBusI', label: 'Average current on the main busbar run', unit: 'A', type: 'number', min: 0, step: 50, hint: 'Its loss comes from the busbar calculation, scaled by (this current ÷ In)²' },
+      { id: 'thermFans', label: 'Use the recommended fans for the busbar air temperature', type: 'select', full: true, options: [['yes', 'Yes, if fans are needed'], ['no', 'No, assume natural cooling only']] },
+      { id: 'thermSizes', label: 'Fan sizes available, with outlet filter', unit: 'm³/h', type: 'text', full: true, hint: 'Separate with commas' }
+    ] },
+    { id: 'thermrows', title: 'Board heat losses', open: false, custom: 'rows' },
     { id: 'assume', title: 'Enclosure assumptions', open: false, custom: true }
   ];
 
@@ -174,6 +191,7 @@
   function defaultState() {
     var s = {};
     Object.keys(FIELD_INDEX).forEach(function (k) { s[k] = String(D[k]); });
+    s.thermRows = String(D.thermRows);
     BC.IP_CLASSES.forEach(function (c) { s['ipRise.' + c] = String(D.ipRise[c]); });
     BC.FORMS.forEach(function (f) { s['formRise.' + f] = String(D.formRise[f]); s['formConv.' + f] = String(D.formConv[f]); });
     return s;
@@ -184,6 +202,7 @@
   function toInputs(s) {
     var o = {};
     Object.keys(FIELD_INDEX).forEach(function (k) { o[k] = s[k]; });
+    o.thermRows = s.thermRows;
     o.ipRise = {}; o.formRise = {}; o.formConv = {};
     BC.IP_CLASSES.forEach(function (c) { o.ipRise[c] = Number(s['ipRise.' + c]); });
     BC.FORMS.forEach(function (f) { o.formRise[f] = Number(s['formRise.' + f]); o.formConv[f] = Number(s['formConv.' + f]); });
@@ -222,6 +241,8 @@
       ctl = '<select id="' + id + '" data-key="' + f.id + '">' + optionsFor(f).map(function (o) {
         return '<option value="' + esc(o[0]) + '"' + (String(state[f.id]) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
       }).join('') + '</select>';
+    } else if (f.type === 'text') {
+      ctl = '<input id="' + id + '" data-key="' + f.id + '" type="text" value="' + esc(state[f.id]) + '">';
     } else {
       ctl = '<input id="' + id + '" data-key="' + f.id + '" type="number" inputmode="decimal" value="' + esc(state[f.id]) + '"' +
         (f.min !== undefined ? ' min="' + f.min + '"' : '') + (f.max !== undefined ? ' max="' + f.max + '"' : '') +
@@ -256,7 +277,7 @@
     host.innerHTML = SECTIONS.map(function (sec, i) {
       var open = sec.id in openState ? openState[sec.id] : sec.open;
       return '<details class="card" data-sec="' + sec.id + '"' + (open ? ' open' : '') + '><summary><span><span class="step">' + (i + 1) + '</span>' + esc(sec.title) + '</span></summary>' +
-        (sec.custom ? assumptionsHTML() : '<div class="fields">' + sec.fields.map(fieldHTML).join('') + '</div>') + '</details>';
+        (sec.custom ? (sec.custom === 'rows' ? rowsHTML() : assumptionsHTML()) : '<div class="fields">' + sec.fields.map(fieldHTML).join('') + '</div>') + '</details>';
     }).join('') +
       '<datalist id="dl-widths">' + [20, 25, 30, 40, 50, 60, 80, 100, 120, 160, 200].map(function (w) { return '<option value="' + w + '">'; }).join('') + '</datalist>' +
       '<datalist id="dl-thicks">' + [3, 5, 6, 8, 10, 12, 15, 20].map(function (w) { return '<option value="' + w + '">'; }).join('') + '</datalist>';
@@ -320,6 +341,7 @@
     }
     host.addEventListener('input', handler);
     host.addEventListener('change', handler);
+    bindRows();
   }
 
   // ------------------------------------------------------------ calculation
@@ -345,7 +367,8 @@
       return;
     }
     var r;
-    try { r = BC.calculate(toInputs(state)); }
+    var boardRes;
+    try { boardRes = BC.resolveBoard(toInputs(state)); r = BC.calculate(boardRes.inp); r.boardRes = boardRes; }
     catch (e) {
       host.innerHTML = '<div class="banner bad"><span class="icon">⚠</span><div><h2>Calculation error</h2><p>' + esc(e.message) + '</p></div></div>';
       return;
@@ -388,6 +411,7 @@
       kpi('Clearance during a fault', r.insul.ok, fmt(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 1) + ' <small>mm</small>', 'Minimum ' + fmt(r.insul.clearMin, 1) + ' mm · bars deflect ' + fmt(r.insul.deflection, 1) + ' mm' + (r.insul.elastic ? ' (elastic)' : ' (yielding)'), r.insul.clearMin / Math.max(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 0.001)) +
       kpi('Support load per phase', r.sup.ok, fmt(r.sup.Fd / 1000, 1) + ' <small>kN</small>', r.sup.nSel + ' supports at ' + fmt(inp.span) + ' mm · bars ' + fmt(r.sup.mass) + ' kg', null) +
       arcKpi(inp) +
+      thermKpi(r) +
       (jt ? kpi('Joint tightening torque', null, fmt(jt.torque, jt.torque < 20 ? 1 : 0) + ' <small>N·m</small>', jt.count + ' × ' + jt.size + ' ' + esc(inp.grade) + ' · preload ' + fmt(jt.preload.F / 1000, 1) + ' kN each', null) : '') +
       '</div>';
 
@@ -397,7 +421,7 @@
       (inp.mounting === 'flat' ? 'bars flat' : inp.mounting === 'vertical' ? 'vertical run (plan view)' : 'bars on edge') + '. Shading shows current density relative to a uniform (DC) distribution at ' + fmt(inp.freq) + ' Hz.</p>' +
       '<div class="grid-2 grid-xsec"><div>' + drawSection(r) + '</div><div>' + sharingTable(r) + '</div></div></div>';
 
-    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + protPanel(r) + arcPanel(r) + autosizePanel() + methodPanel() + inputsSummary(r);
+    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + protPanel(r) + arcPanel(r) + thermPanel(r) + autosizePanel() + methodPanel() + inputsSummary(r);
     return html;
   }
 
@@ -464,6 +488,113 @@
       '<li>Not covered: earth fault, zone-selective interlocking, maintenance mode, cold-load pick-up, cable damage curves.</li></ul>';
     return '<details class="card panel" open><summary><span>Protection and fault level (ACB and 11 kV relays)</span>' + badge(allOk, 'GRADED', 'CHECK GRADING') + '</summary>' +
       '<div class="grid-2"><div>' + levels + '</div><div>' + tccChart(pr) + '</div></div>' + '<h4 style="margin:14px 0 6px">Grading</h4>' + gr + notes + '</details>';
+  }
+
+  // ---- board cooling and fan sizing
+  var THERM_COLS = {
+    dev: [['desc', 'Device', 't'], ['qty', 'Qty'], ['In', 'Rated current (A)'], ['I', 'Load current (A)'], ['loss', 'Loss at rated current, all poles (W)']],
+    cond: [['desc', 'Conductor', 't'], ['sets', 'Sets'], ['I', 'Current (A)'], ['L', 'Length (m)'], ['n', 'Conductors per phase'], ['S', 'Section each (mm²)'], ['mat', 'Metal', 's'], ['kac', 'AC factor']],
+    fix: [['desc', 'Item', 't'], ['qty', 'Qty'], ['w', 'Loss each (W)']]
+  };
+  var THERM_BLANK = { dev: { desc: '', qty: 1, In: 100, I: 80, loss: 20 }, cond: { desc: '', sets: 1, I: 100, L: 1, n: 1, S: 100, mat: 'Cu', kac: 1 }, fix: { desc: '', qty: 1, w: 5 } };
+  var THERM_TITLE = { dev: 'Breakers and switching devices', cond: 'Busbars and cables inside the board (other than the main busbar)', fix: 'Other equipment' };
+  function rowLoss(list, r, T) {
+    var n = function (v) { var x = parseFloat(v); return isFinite(x) ? x : 0; };
+    if (list === 'dev') { var In = n(r.In); return In > 0 ? n(r.qty) * n(r.loss) * Math.pow(n(r.I) / In, 2) : 0; }
+    if (list === 'cond') { var a = n(r.n) * n(r.S), rho = r.mat === 'Al' ? 0.0282 * (1 + 0.00403 * (T - 20)) : 0.017241 * (1 + 0.00393 * (T - 20)); return a > 0 ? n(r.sets) * 3 * Math.pow(n(r.I), 2) * rho * n(r.L) / a * (n(r.kac) || 1) : 0; }
+    return n(r.qty) * n(r.w);
+  }
+  function rowsHTML() {
+    var rows = BC.parseBoardRows(state.thermRows), T = Number(state.thermTbar) || 85;
+    return '<div class="fields"><div class="assume-wrap"><p class="hint muted" style="margin:0">Default watt values are typical figures: replace them with manufacturer data. Device loss scales with the square of the load: loss = quantity × loss at rated current × (load ÷ rated)². The main busbar is not listed here: its loss comes from the busbar calculation.</p>' +
+      ['dev', 'cond', 'fix'].map(function (list) {
+        var cols = THERM_COLS[list];
+        return '<h4>' + esc(THERM_TITLE[list]) + ' <button type="button" class="btn" data-trow-add="' + list + '" style="margin-left:8px">Add</button></h4><div class="table-scroll"><table class="assume-table"><thead><tr>' +
+          cols.map(function (c) { return '<th>' + esc(c[1]) + '</th>'; }).join('') + '<th>Loss (W)</th><th></th></tr></thead><tbody>' +
+          rows[list].map(function (r, i) {
+            return '<tr>' + cols.map(function (c) {
+              var at = ' data-trow="' + list + '" data-i="' + i + '" data-k="' + c[0] + '" aria-label="' + esc(c[1]) + '"';
+              if (c[2] === 't') return '<td><input type="text" style="min-width:190px"' + at + ' value="' + esc(r[c[0]]) + '"></td>';
+              if (c[2] === 's') return '<td><select' + at + '><option value="Cu"' + (r.mat === 'Cu' ? ' selected' : '') + '>Cu</option><option value="Al"' + (r.mat === 'Al' ? ' selected' : '') + '>Al</option></select></td>';
+              return '<td><input type="number" min="0" step="any" style="width:84px"' + at + ' value="' + esc(r[c[0]]) + '"></td>';
+            }).join('') + '<td class="num" data-trow-loss="' + list + '-' + i + '">' + fmt(rowLoss(list, r, T), 0) + '</td><td><button type="button" class="btn" data-trow-del="' + list + '" data-i="' + i + '" aria-label="Remove row">×</button></td></tr>';
+          }).join('') + (rows[list].length ? '' : '<tr><td colspan="' + (cols.length + 2) + '" class="hint muted">No rows yet.</td></tr>') + '</tbody></table></div>';
+      }).join('') + '</div></div>';
+  }
+  function updateRowLosses() {
+    var rows = BC.parseBoardRows(state.thermRows), T = Number(state.thermTbar) || 85;
+    ['dev', 'cond', 'fix'].forEach(function (list) { rows[list].forEach(function (r, i) { var c = document.querySelector('[data-trow-loss="' + list + '-' + i + '"]'); if (c) c.textContent = fmt(rowLoss(list, r, T), 0); }); });
+  }
+  function setRows(rows) { state.thermRows = JSON.stringify(rows); writeHash(); }
+  function bindRows() {
+    var host = $('#inputs');
+    host.addEventListener('input', function (e) {
+      var t = e.target; if (!t.dataset || !t.dataset.trow) return;
+      var rows = BC.parseBoardRows(state.thermRows);
+      rows[t.dataset.trow][+t.dataset.i][t.dataset.k] = t.type === 'number' ? (t.value === '' ? '' : Number(t.value)) : t.value;
+      setRows(rows); updateRowLosses(); schedule();
+    });
+    host.addEventListener('change', function (e) {
+      var t = e.target; if (!t.dataset || !t.dataset.trow || t.tagName !== 'SELECT') return;
+      var rows = BC.parseBoardRows(state.thermRows); rows[t.dataset.trow][+t.dataset.i][t.dataset.k] = t.value; setRows(rows); updateRowLosses(); schedule();
+    });
+    host.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-trow-add],[data-trow-del]'); if (!b) return;
+      var rows = BC.parseBoardRows(state.thermRows);
+      if (b.dataset.trowAdd) rows[b.dataset.trowAdd].push(JSON.parse(JSON.stringify(THERM_BLANK[b.dataset.trowAdd])));
+      else rows[b.dataset.trowDel].splice(+b.dataset.i, 1);
+      setRows(rows); renderForm(); schedule();
+    });
+  }
+
+  function thermResult(r) {
+    var inp = r.inputs;
+    if (r.boardRes && r.boardRes.board) return { board: r.boardRes.board, air: r.boardRes.air, busW: r.boardRes.busW, linked: true, converged: r.boardRes.converged };
+    var busW = BC.busLossW(inp, r), board = BC.boardThermal(BC.boardFromInputs(inp, busW));
+    return { board: board, air: BC.airAtBusbars(inp, board), busW: busW, linked: false };
+  }
+  function thermVerdict(b) {
+    var tNo = b.Ta + b.riseNoFan, spare = b.dTmax - b.riseNoFan;
+    if (!(b.Ae > 0) || !(b.Pv > 0)) return { cls: 'warn', tag: 'INPUTS NEEDED', msg: 'Enter the enclosure size and at least one heat loss.' };
+    if (b.dTmax <= 0) return { cls: 'bad', tag: 'FANS CANNOT DO THIS', msg: 'The room is as hot as the allowed inside temperature. Fans only cool towards room temperature, so this needs air conditioning or a higher limit.' };
+    if (b.riseNoFan <= b.dTmax) return spare < 3 ? { cls: 'warn', tag: 'NO FAN, MARGINAL', msg: 'Natural cooling holds the inside air at about ' + fmt(tNo, 1) + ' °C, only ' + fmt(spare, 1) + ' K under the limit. A small fan would give headroom.' } : { cls: 'ok', tag: 'NO FAN NEEDED', msg: 'Natural cooling holds the inside air at about ' + fmt(tNo, 1) + ' °C, ' + fmt(spare, 1) + ' K under the ' + fmt(b.Ti, 0) + ' °C limit.' };
+    if (!b.rec) return { cls: 'bad', tag: 'BEYOND FILTER FANS', msg: 'The board needs ' + fmt(b.Vd, 0) + ' m³/h, more than eight of the largest fan listed. Consider roof extract fans, a larger enclosure or air conditioning.' };
+    return { cls: 'warn', tag: 'FAN NEEDED: ' + b.rec.n + ' × ' + fmt(b.rec.s, 0) + ' m³/h', msg: 'Without fans the inside air would reach about ' + fmt(tNo, 1) + ' °C. With the recommended fans it settles near ' + fmt(b.Ta + b.riseFan, 1) + ' °C.' };
+  }
+  function thermKpi(r) {
+    var t = thermResult(r), v = thermVerdict(t.board);
+    return '<div class="card kpi"><div class="label"><span>Board cooling</span><span class="badge ' + (v.cls === 'ok' ? 'ok' : v.cls === 'bad' ? 'bad' : 'warn') + '">' + (v.cls === 'ok' ? 'OK' : v.cls === 'bad' ? 'FAIL' : 'FAN') + '</span></div>' +
+      '<div class="value">' + fmt(t.board.Ta + t.board.riseNoFan, 1) + ' <small>°C</small></div><div class="sub">Board air, no fan · ' + fmt(t.board.Pv, 0) + ' W · limit ' + fmt(t.board.Ti, 0) + ' °C</div></div>';
+  }
+  function thermPanel(r) {
+    var inp = r.inputs, t = thermResult(r), b = t.board, v = thermVerdict(b), a = t.air;
+    var bar = function (label, val, max, text, over) { return '<div class="barrow"><span class="lab">' + label + '</span><div class="track"><div class="fill' + (over ? ' over' : '') + '" style="width:' + Math.max(0, Math.min(100, max > 0 ? val / max * 100 : 0)).toFixed(1) + '%"></div></div><span class="val">' + text + '</span></div>'; };
+    var mx = Math.max(b.riseNoFan || 0, b.dTmax, 1) * 1.1;
+    var left = '<div class="banner ' + (v.cls === 'ok' ? 'ok' : v.cls === 'bad' ? 'bad' : 'warn') + '" style="margin:0 0 12px"><div><h2 style="font-size:15px">' + esc(v.tag) + '</h2><p>' + esc(v.msg) + '</p></div></div>' +
+      '<table class="data">' +
+      '<tr><td>Devices</td><td class="num">' + fmt(b.Pd, 0) + ' W</td></tr>' +
+      '<tr><td>Main busbar (from the busbar calculation, ' + fmt(inp.thermBusI) + ' A on ' + fmt(inp.runLen) + ' mm)</td><td class="num">' + fmt(b.Pb, 0) + ' W</td></tr>' +
+      '<tr><td>Other conductors</td><td class="num">' + fmt(b.Pc, 0) + ' W</td></tr>' +
+      '<tr><td>Other equipment</td><td class="num">' + fmt(b.Pf, 0) + ' W</td></tr>' +
+      '<tr class="highlight"><td><strong>Total heat loss</strong></td><td class="num"><strong>' + fmt(b.Pv, 0) + ' W</strong></td></tr>' +
+      '<tr><td>Effective cooling surface (IEC 60890 factors)</td><td class="num">' + fmt(b.Ae, 2) + ' m²</td></tr>' +
+      '<tr><td>Air density at ' + fmt(Number(inp.altitude)) + ' m and ' + fmt(b.Ta, 0) + ' °C</td><td class="num">' + fmt(b.rho, 3) + ' kg/m³</td></tr>' +
+      '<tr><td>Airflow needed · with the ' + fmt(b.m * 100, 0) + ' % margin for dirty filters</td><td class="num">' + fmt(b.Vreq, 0) + ' · ' + fmt(b.Vd, 0) + ' m³/h</td></tr></table>';
+    var right = '<h4 style="margin:0 0 6px">Air temperature rise above the room</h4><div class="bars">' +
+      bar('Without fans', b.riseNoFan, mx, fmt(b.riseNoFan, 1) + ' K', b.riseNoFan > b.dTmax) +
+      (b.rec ? bar('With fans', b.riseFan, mx, fmt(b.riseFan, 1) + ' K', b.riseFan > b.dTmax) : '') + '</div>' +
+      '<p class="hint muted" style="margin:6px 0 10px">Allowed rise ' + fmt(b.dTmax, 1) + ' K (' + fmt(b.Ti, 0) + ' °C inside at ' + fmt(b.Ta, 0) + ' °C room).</p>' +
+      (b.rec && b.dTmax > 0 ? '<h4 style="margin:0 0 6px">Fan options</h4><table class="data">' + b.opts.map(function (o, i) {
+        return '<tr' + (i === 0 ? ' class="highlight"' : '') + '><td><strong>' + o.n + ' × ' + fmt(o.s, 0) + ' m³/h' + (i === 0 ? ' (recommended)' : '') + '</strong></td><td class="num">' + fmt(o.tot, 0) + ' m³/h installed</td></tr>';
+      }).join('') + '</table><ul class="notes muted"><li>Use the catalogue airflow measured with the outlet filter fitted, not the free-blowing figure.</li><li>Fit each fan low on the door or side blowing in, with an outlet filter of the same size high on the opposite side.</li>' + (b.W > 1.6 ? '<li>The board is ' + fmt(b.W, 1) + ' m wide: spread several smaller fans along it, nearest the cubicles with the most heat.</li>' : '') + '</ul>' : '') +
+      '<div class="card" style="margin-top:10px;padding:10px 12px"><strong>Air around the busbars: ' + fmt(a.T, 1) + ' °C</strong><br><span class="muted">' + (a.withFans ? 'With the recommended fans' : 'Without fans') + ': rise ' + fmt(a.rise, 1) + ' K × ' + fmt(a.locFactor, 2) + ' for the busbar position (' + esc(inp.location) + ' of the board) above ' + fmt(b.Ta, 0) + ' °C.</span><br>' +
+      (t.linked ? '<span class="muted">This is the internal air temperature used in the busbar results above (found in ' + (r.boardRes.iterations) + ' iterations' + (t.converged ? '' : ', not fully converged') + ').</span>' : '<span class="muted">Not used yet. Set "Internal air temperature" to "From the board cooling calculation" to apply it to the busbars.</span>') + '</div>';
+    var notes = '<ul class="notes muted">' +
+      '<li>The method gives the average air temperature inside one enclosure. Air at the top of a tall board runs hotter than the average. The busbar position factor above (top 1.0, middle 0.75, bottom 0.5, taken from the estimate and applied to the mid-height average) is an approximation.</li>' +
+      '<li>Partitioned boards (Form 3 or 4) trap heat in each cubicle. Check the most heavily loaded cubicle as its own board, with its sides set to adjoining cubicle.</li>' +
+      '<li>IEC 61439-1 accepts temperature-rise verification by calculation only up to 1600 A' + (b.maxIn > 1600 ? '. This board has a ' + fmt(b.maxIn, 0) + ' A device, so treat this as a design estimate and fan sizing only' : '') + '.</li>' +
+      '<li>Fans cool towards the room temperature, never below it. Fan cut-outs also lower the IP rating to that of the filter' + (Number(inp.altitude) > 2000 ? '. Above 2000 m IEC 61439-1 treats the site as a special service condition' : '') + '.</li></ul>';
+    return '<details class="card panel" open><summary><span>Board cooling and fan sizing (IEC 60890 method)</span><span class="badge ' + (v.cls === 'ok' ? 'ok' : v.cls === 'bad' ? 'bad' : 'warn') + '">' + esc(v.tag.split(':')[0]) + '</span></summary><div class="grid-2"><div>' + left + '</div><div>' + right + '</div></div>' + notes + '</details>';
   }
 
   // ---- arc flash (IEEE 1584-2018)
@@ -860,7 +991,7 @@
       '<h4>4. Short-circuit thermal</h4><p>Adiabatic heating from the operating temperature θᵢ to θ<sub>f</sub>: <span class="formula">S<sub>min</sub> = I<sub>cw</sub>√t / k</span> with k = K·√ln((θ<sub>f</sub>+β)/(θᵢ+β)), K = √(Q<sub>c</sub>(β+20)/ρ<sub>20</sub>) (IEC 60949). Recommended θ<sub>f</sub>: 200 °C copper, 180 °C aluminium (IEC 60865-1).</p>' +
       '<h4>5. Short-circuit forces (IEC 60865-1 simplified method)</h4><p>i<sub>p</sub> = n·I<sub>cw</sub> with n from IEC 61439-1 Table 7. Centre-phase force F<sub>m3</sub> = (μ₀/2π)(√3/2)i<sub>p</sub>²l/a<sub>m</sub>; sub-conductor force F<sub>s</sub> = (μ₀/2π)(i<sub>p</sub>/n)²lₛ/aₛ. Effective distances a<sub>m</sub>, aₛ are integrated numerically for the actual rectangular sections. Stresses σ<sub>m</sub> = V<sub>σ</sub>V<sub>r</sub>βF<sub>m3</sub>l/(8Z<sub>m</sub>), σₛ = V<sub>σ</sub>V<sub>r</sub>Fₛlₛ/(16Zₛ); require σ<sub>tot</sub> ≤ q·R<sub>p0.2</sub> and σₛ ≤ R<sub>p0.2</sub>. Support force F<sub>d</sub> = V<sub>F</sub>V<sub>r</sub>·α·F<sub>m3</sub>. Natural-frequency (dynamic) reduction factors are not applied (conservative).</p>' +
       '<h4>6. Bolted joints</h4><p>Preload F = (% of proof)·A<sub>s</sub>·R<sub>p</sub> (ISO 898-1 / ISO 3506-1); torque <span class="formula">T = K·F·d</span>. Bolt patterns follow common practice (cf. DIN 43673 / CDA Pub. 22). Checks: mean contact pressure over the overlap and washer bearing pressure vs. the bar\'s 0.2 % proof stress.</p>' +
-      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>9. Arc flash (IEEE 1584-2018)</h4><p>Empirical model for three-phase AC at 208 V to 15 kV. The intermediate arcing current comes from equation 1 for the electrode configuration (VCB, VCBB, HCB, VOA, HOA), gap and bolted fault current; below 600 V the final arcing current follows from equation 25. The minimum arcing current applies the variation factor of Table 2 (equation 2). Incident energy at the working distance uses equations 3 to 6 and the enclosure size correction factor of Tables 6 and 7 (equations 11 to 15). Between 600 V and 14.3 kV the results are interpolated (equations 16 to 24). The arc flash boundary is the distance at which the energy reaches 1.2 cal/cm². The energy is worked out at maximum and minimum arcing current, and the larger value is reported. The model is valid for arcing times the protection can actually deliver and for the ranges listed in the standard; inputs outside those ranges are refused.</p><h4>10. Protection and arcing time</h4><p>The bolted fault current at the LV terminals is I<sub>k</sub> = I<sub>n,LV</sub> / (z<sub>t</sub> + S<sub>t</sub>/S<sub>k</sub>), with z<sub>t</sub> the transformer impedance, S<sub>t</sub> its rating and S<sub>k</sub> the source fault level. The ACB trips on the first of: instantaneous (I ≥ Ii·In), short delay (I ≥ Isd·Ir, flat or I²t) or long delay (I &gt; 1.1·Ir, t = tr·(6·Ir/I)²); the opening time is added. The 11 kV relays follow IEC 60255-151, t = TMS·k/((I/Is)<sup>α</sup> − 1). The arcing current is first found from IEEE 1584 with a provisional time, the trip time is read at that current, and the incident energy is then recalculated with it. A fault on the busbars is cleared by the ACB; a fault on the ACB line-side terminals is cleared by the faster of the two 11 kV relays at the arcing current divided by the transformer ratio. Trip times use the nominal curves without tolerance. If a device does not trip, the arcing time is taken as 2 s.</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment testing (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
+      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>9. Arc flash (IEEE 1584-2018)</h4><p>Empirical model for three-phase AC at 208 V to 15 kV. The intermediate arcing current comes from equation 1 for the electrode configuration (VCB, VCBB, HCB, VOA, HOA), gap and bolted fault current; below 600 V the final arcing current follows from equation 25. The minimum arcing current applies the variation factor of Table 2 (equation 2). Incident energy at the working distance uses equations 3 to 6 and the enclosure size correction factor of Tables 6 and 7 (equations 11 to 15). Between 600 V and 14.3 kV the results are interpolated (equations 16 to 24). The arc flash boundary is the distance at which the energy reaches 1.2 cal/cm². The energy is worked out at maximum and minimum arcing current, and the larger value is reported. The model is valid for arcing times the protection can actually deliver and for the ranges listed in the standard; inputs outside those ranges are refused.</p><h4>10. Protection and arcing time</h4><p>The bolted fault current at the LV terminals is I<sub>k</sub> = I<sub>n,LV</sub> / (z<sub>t</sub> + S<sub>t</sub>/S<sub>k</sub>), with z<sub>t</sub> the transformer impedance, S<sub>t</sub> its rating and S<sub>k</sub> the source fault level. The ACB trips on the first of: instantaneous (I ≥ Ii·In), short delay (I ≥ Isd·Ir, flat or I²t) or long delay (I &gt; 1.1·Ir, t = tr·(6·Ir/I)²); the opening time is added. The 11 kV relays follow IEC 60255-151, t = TMS·k/((I/Is)<sup>α</sup> − 1). The arcing current is first found from IEEE 1584 with a provisional time, the trip time is read at that current, and the incident energy is then recalculated with it. A fault on the busbars is cleared by the ACB; a fault on the ACB line-side terminals is cleared by the faster of the two 11 kV relays at the arcing current divided by the transformer ratio. Trip times use the nominal curves without tolerance. If a device does not trip, the arcing time is taken as 2 s.</p><h4>11. Board cooling and fan sizing</h4><p>Heat balance of the whole board: P<sub>v</sub> = devices + main busbar + other conductors + other equipment. Devices lose quantity × loss at rated current × (I/I<sub>n</sub>)². The main busbar loss is the loss per metre of the busbar calculation scaled to the average current on the run. Other conductors lose 3·I²·ρ·L/(n·S)·k<sub>ac</sub>. The effective cooling surface is A<sub>e</sub> = Σ A·f with the IEC 60890 surface factors (top 1.4, or 0.7 if covered; front 0.9; rear, left and right 0.9 if exposed, 0.5 against a wall or adjoining cubicle). The average rise without fans is P<sub>v</sub>/(k·A<sub>e</sub>), with k the enclosure heat transfer coefficient. Fans carry the heat that the surfaces cannot remove at the allowed rise: V = (P<sub>v</sub> − k·A<sub>e</sub>·ΔT<sub>max</sub>)·3600/(ρ·c<sub>p</sub>·ΔT<sub>max</sub>), with air density from the site altitude and room temperature, plus a margin for dirty filters. With the recommended fans the rise is P<sub>v</sub>/(k·A<sub>e</sub> + V<sub>eff</sub>·ρ·c<sub>p</sub>/3600). If "Internal air temperature" is set to the board calculation, the busbar temperature, its loss and the board air temperature are solved together by iteration, and the air around the busbars is the average rise times the position factor (top 1.0, middle 0.75, bottom 0.5, relative to the 0.75 of the mid-height average).</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment testing (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
       '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEEE 1584-2018 — Guide for performing arc-flash hazard calculations. Coefficients checked against the open-source implementation github.com/LiaungYip/arcflash (MIT) and the Annex D examples.</li><li>NFPA 70E — Standard for electrical safety in the workplace (PPE categories).</li><li>IEC 60255-151 — Measuring relays and protection equipment: functional requirements for over/under current protection.</li><li>Eaton PXR 20/25 trip unit manual and time-current curves (characteristic shapes; check the setting ranges against the manual for your breaker).</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
   }
 
@@ -880,7 +1011,7 @@
     var out = $('#autosize-out');
     out.innerHTML = '<p class="muted">Searching ' + (BC.STANDARD_SIZES.length * 4) + ' combinations…</p>';
     setTimeout(function () {
-      var res = BC.autoSize(toInputs(state), 8);
+      var res = BC.autoSize(BC.resolveBoard(toInputs(state)).inp, 8);
       if (!res.candidates.length) {
         autosizeHTML = '<div class="banner bad"><span class="icon">✕</span><div><h2>No standard section passes</h2><p>Try a larger phase spacing, shorter support span, intermediate spacers, a higher temperature limit, better ventilation (IP / form) or busbar trunking.</p></div></div>';
       } else {

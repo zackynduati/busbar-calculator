@@ -18,6 +18,7 @@
   <script src="../js/busbar-engine.js"></script>
   <script src="../js/arcflash.js"></script>
   <script src="../js/protection.js"></script>
+  <script src="../js/thermal.js"></script>
   <script>
   (function () {
     var BC = window.BusbarCalc, out = document.getElementById('out'), results = [];
@@ -291,6 +292,45 @@
     var off = BC.protection(Object.assign({}, BC.DEFAULT_INPUTS, { acbIi: 2 }));
     truthy('Lower instantaneous pickup trips the arc instantly and cuts the energy', off.results[0].tmax < 100, off.results[0].tmax + ' ms');
     truthy('Bad transformer data is refused', BC.protection(Object.assign({}, BC.DEFAULT_INPUTS, { protKva: 0 })).errors.length > 0, '');
+
+    // --- board cooling and fans (reference values from the original Switchboard Thermal Calculator, same inputs)
+    function tb(o) { return Object.assign({ k: '5.5', top: 'exposed', rear: 'exposed', left: 'exposed', right: 'exposed', Ta: 35, Ti: 50, alt: 1800, margin: 25, Tbar: 85, sizes: '20, 55, 105, 160, 230, 370, 550, 700, 900', busW: 0 }, o); }
+    var ex1 = BC.boardThermal(tb({ W: 3940, H: 2200, D: 800,
+      dev: [{ qty: 1, In: 2500, I: 2062, loss: 600 }, { qty: 1, In: 630, I: 481, loss: 110 }, { qty: 2, In: 250, I: 200, loss: 55 }],
+      cond: [{ sets: 1, I: 2062, L: 1.2, n: 2, S: 1000, mat: 'Cu', kac: 1.2 }, { sets: 1, I: 1450, L: 3.8, n: 2, S: 1000, mat: 'Cu', kac: 1.2 }, { sets: 1, I: 481, L: 1.5, n: 1, S: 400, mat: 'Cu', kac: 1.05 },
+             { sets: 2, I: 200, L: 1.5, n: 1, S: 150, mat: 'Cu', kac: 1 }, { sets: 1, I: 2062, L: 0.4, n: 4, S: 630, mat: 'Al', kac: 1.1 }],
+      fix: [{ qty: 7, w: 5 }, { qty: 1, w: 10 }, { qty: 21, w: 1 }, { qty: 1, w: 50 }, { qty: 1, w: 175 }, { qty: 12, w: 10 }] }));
+    check('Original example 1: effective surface [m2]', ex1.Ae, 23.1831, 23.1833);
+    check('Original example 1: device losses [W]', ex1.Pd, 542.69, 542.71);
+    check('Original example 1: conductor losses [W]', ex1.Pc, 700.43, 700.44);
+    check('Original example 1: other losses [W]', ex1.Pf, 411, 411);
+    check('Original example 1: total loss [W]', ex1.Pv, 1654.13, 1654.14);
+    check('Original example 1: air density at 1800 m, 35 C', ex1.rho, 0.92125, 0.92127);
+    check('Original example 1: rise without fans [K]', ex1.riseNoFan, 12.972, 12.974);
+    check('Original example 1: no fan airflow needed', ex1.Vreq, 0, 0);
+    var ex2 = BC.boardThermal(tb({ W: 800, H: 2200, D: 800, left: 'adjoining', right: 'adjoining',
+      dev: [{ qty: 1, In: 2500, I: 2062, loss: 600 }],
+      cond: [{ sets: 1, I: 2062, L: 1.2, n: 2, S: 1000, mat: 'Cu', kac: 1.2 }, { sets: 1, I: 1450, L: 0.8, n: 2, S: 1000, mat: 'Cu', kac: 1.2 }, { sets: 1, I: 2062, L: 0.4, n: 4, S: 630, mat: 'Al', kac: 1.1 }],
+      fix: [{ qty: 2, w: 5 }, { qty: 6, w: 1 }] }));
+    check('Original example 2: total loss [W]', ex2.Pv, 767.75, 767.77);
+    check('Original example 2: rise without fans [K]', ex2.riseNoFan, 23.968, 23.969);
+    check('Original example 2: airflow before margin [m3/h]', ex2.Vreq, 74.46, 74.48);
+    check('Original example 2: airflow with margin [m3/h]', ex2.Vd, 93.08, 93.09);
+    truthy('Original example 2: recommended fan is 1 x 105 m3/h', ex2.rec && ex2.rec.n === 1 && ex2.rec.s === 105, JSON.stringify(ex2.rec));
+    check('Original example 2: rise with the fan [K]', ex2.riseFan, 14.314, 14.315);
+    check('Extra busbar loss adds to the total', BC.boardThermal(tb({ W: 800, H: 2200, D: 800, dev: [], cond: [], fix: [], busW: 500 })).Pv, 500, 500);
+    // link to the busbar calculation
+    var rb0 = BC.resolveBoard(base({ internalMode: 'estimate' }));
+    truthy('Estimate mode is left alone', rb0.board === null && rb0.inp.internalMode === 'estimate', '');
+    var rb = BC.resolveBoard(base({ internalMode: 'board', nBars: 3, width: 80, thick: 10, phaseSpacing: 90, location: 'bottom', altitude: 1800 }));
+    truthy('Board mode converges', rb.converged === true && rb.iterations <= 8, 'iterations ' + rb.iterations);
+    truthy('Board mode feeds a specified internal air temperature to the busbar calculation', rb.inp.internalMode === 'specify' && isFinite(rb.inp.Tinternal), String(rb.inp.Tinternal));
+    check('Busbar air temperature stays between room and room + average rise (bottom position)', rb.Tint, 35, 35 + rb.board.riseNoFan);
+    var rbTop = BC.resolveBoard(base({ internalMode: 'board', nBars: 3, width: 80, thick: 10, phaseSpacing: 90, location: 'top', altitude: 1800 }));
+    truthy('The top of the board runs hotter than the bottom', rbTop.Tint > rb.Tint, rbTop.Tint.toFixed(1) + ' vs ' + rb.Tint.toFixed(1));
+    check('Main busbar loss used by the board model [W] is positive', rb.busW, 1, 1e6);
+    var rbc = BC.calculate(rb.inp);
+    check('The busbar calculation runs on the board temperature', rbc.Tint, rb.Tint - 1e-9, rb.Tint + 1e-9);
 
     // --- performance
     var t0 = performance.now();
