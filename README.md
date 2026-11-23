@@ -1,6 +1,6 @@
-# Busbar Sizing Calculator
+# Boardwise
 
-A browser-based calculator for low-voltage switchboard busbars. It sizes copper or aluminium bars for **continuous current with temperature rise**, checks **short-circuit thermal and mechanical withstand**, and gives **bolt size and tightening torque** for the bolted joints.
+A browser-based design check for low-voltage switchboards. It sizes copper or aluminium busbars for **continuous current with temperature rise**, checks **short-circuit thermal and mechanical withstand**, **clearances and creepage**, the **busbar supports** and the **bolted joints**, then goes on to the rest of the board: the **fault level and trip times of the ACB**, the **arc flash incident energy** (IEEE 1584-2018), and the **board cooling and fan sizing**. The results feed each other: the protection trip times set the arcing time, and the board air temperature sets the busbar temperature.
 
 It's a static site (HTML/CSS/JavaScript, no build step), so you can host it on GitHub Pages or open `index.html` directly.
 

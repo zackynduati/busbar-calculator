@@ -1,4 +1,4 @@
-/* Busbar Sizing Calculator – UI layer. Depends on js/busbar-engine.js (window.BusbarCalc). */
+/* Boardwise – UI layer. Depends on js/busbar-engine.js (window.BusbarCalc). */
 (function () {
   'use strict';
   var BC = window.BusbarCalc;
