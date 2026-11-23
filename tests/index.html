@@ -16,6 +16,7 @@
   <p id="summary">Running…</p>
   <ol id="out"></ol>
   <script src="../js/busbar-engine.js"></script>
+  <script src="../js/arcflash.js"></script>
   <script>
   (function () {
     var BC = window.BusbarCalc, out = document.getElementById('out'), results = [];
@@ -197,6 +198,57 @@
     truthy('Entered support rating below Fd fails', BC.calculate(base({ supRating: 5 })).sup.okRating === false, '');
     truthy('Entered support rating above Fd passes', BC.calculate(base({ supRating: 60 })).sup.okRating === true, '');
     truthy('Weak fixings fail', BC.calculate(base({ fixN: 1, fixSize: 'M6' })).sup.okFix === false, '');
+
+    // --- arc flash, IEEE 1584-2018 (worked examples from Annex D)
+    var AI = BC.arcInternals;
+    function near(name, actual, expected, tol) { check(name, actual, expected - tol, expected + tol); }
+    // D.1: 4.16 kV, VCB, 15 kA, gap 104 mm, 914.4 mm, box 1143 x 762 x 508 mm, 197 ms (max) / 223 ms (min)
+    var d1 = BC.arcFlash({ arcVoc: 4160, arcIbf: 15, arcEC: 'VCB', arcGap: 104, arcDist: 914.4, arcH: 1143, arcW: 762, arcDepth: 508, arcTmax: 197, arcTmin: 223, Icw: 0 });
+    truthy('Annex D.1 inputs accepted', d1.errors.length === 0, d1.errors.join('; '));
+    var m1 = d1.main.max, n1 = d1.main.min, c1 = d1.main.enclosure;
+    near('D.1 Iarc 600 V [kA] (D.9)', m1.Iarc600, 11.117, 0.002);
+    near('D.1 Iarc 2.7 kV [kA] (D.11)', m1.Iarc2700, 12.816, 0.002);
+    near('D.1 Iarc 14.3 kV [kA] (D.13)', m1.Iarc14300, 14.116, 0.002);
+    near('D.1 Iarc at 4.16 kV [kA] (D.17)', m1.Iarc, 12.979, 0.002);
+    near('D.1 box width_1 [in] (D.19)', c1.w1, 27.632, 0.002);
+    near('D.1 box height_1 [in] (D.20)', c1.h1, 45, 0.002);
+    near('D.1 EES [in] (D.21)', c1.EES, 36.316, 0.002);
+    near('D.1 size correction factor CF (D.22)', c1.CF, 1.284, 0.002);
+    near('D.1 E 600 V [J/cm2] (D.24)', m1.E600, 8.652, 0.002);
+    near('D.1 E 2.7 kV [J/cm2] (D.26)', m1.E2700, 11.977, 0.002);
+    near('D.1 E 14.3 kV [J/cm2] (D.28)', m1.E14300, 13.367, 0.002);
+    near('D.1 E interpolated [J/cm2] (D.32)', m1.E, 12.152, 0.002);
+    near('D.1 arc flash boundary [mm] (D.42)', m1.AFB, 1606, 1);
+    near('D.1 variation factor VarCF (D.43)', d1.main.varCF, 0.047, 0.0005);
+    near('D.1 minimum Iarc 600 V [kA] (D.45)', n1.Iarc600, 10.856, 0.002);
+    near('D.1 minimum Iarc at 4.16 kV [kA] (D.51)', n1.Iarc, 12.675, 0.002);
+    near('D.1 minimum E [J/cm2] (D.62)', n1.E, 13.343, 0.002);
+    near('D.1 minimum boundary [mm] (D.72)', n1.AFB, 1704, 1);
+    // D.2: 480 V, VCB, 45 kA, gap 32 mm, 609.6 mm, box 610 x 610 x 254 mm, 61.3 ms (max) / 319 ms (min)
+    var d2 = BC.arcFlash({ arcVoc: 480, arcIbf: 45, arcEC: 'VCB', arcGap: 32, arcDist: 609.6, arcH: 610, arcW: 610, arcDepth: 254, arcTmax: 61.3, arcTmin: 319, Icw: 0 });
+    truthy('Annex D.2 inputs accepted', d2.errors.length === 0, d2.errors.join('; '));
+    var m2 = d2.main.max, n2 = d2.main.min, c2 = d2.main.enclosure;
+    near('D.2 Iarc 600 V [kA] (D.82)', m2.Iarc600, 32.449, 0.002);
+    near('D.2 Iarc at 480 V [kA] (D.84)', m2.Iarc, 28.793, 0.002);
+    near('D.2 box size_1 [in] (D.86)', c2.w1, 24.016, 0.002);
+    near('D.2 EES [in] (D.88)', c2.EES, 24.016, 0.002);
+    near('D.2 size correction factor CF (D.89)', c2.CF, 1.085, 0.002);
+    near('D.2 E [J/cm2] (D.91)', m2.E, 11.585, 0.002);
+    near('D.2 arc flash boundary [mm] (D.95)', m2.AFB, 1029, 1);
+    near('D.2 variation factor VarCF (D.96)', d2.main.varCF, 0.247, 0.0005);
+    near('D.2 minimum Iarc [kA] (D.99)', n2.Iarc, 25.244, 0.002);
+    near('D.2 minimum E [J/cm2] (D.103)', n2.E, 53.156, 0.005);
+    near('D.2 minimum boundary [mm] (D.106)', n2.AFB, 2669, 1);
+    // behaviour
+    var a0 = BC.arcFlash({ arcTmax: 100, arcTmin: 100 }), a1 = BC.arcFlash({ arcTmax: 200, arcTmin: 200 });
+    check('Energy is proportional to arcing time', a1.main.E / a0.main.E, 1.999, 2.001);
+    check('Clearing time for 8 cal/cm2 holds exactly 8 cal/cm2', BC.arcFlash({ arcTmax: a0.main.tFor8, arcTmin: a0.main.tFor8 }).main.cal, 7.99, 8.01);
+    truthy('Closer working distance raises the energy', BC.arcFlash({ arcDist: 457.2 }).main.E > BC.arcFlash({ arcDist: 609.6 }).main.E, '');
+    truthy('Out-of-range gap is rejected', BC.arcFlash({ arcGap: 100 }).errors.length > 0, '');
+    truthy('Working distance below 305 mm is rejected', BC.arcFlash({ arcDist: 250 }).errors.length > 0, '');
+    truthy('Voltage above 15 kV is rejected', BC.arcFlash({ arcVoc: 20000 }).errors.length > 0, '');
+    truthy('Open-air configurations ignore the enclosure', Math.abs(BC.arcFlash({ arcEC: 'HOA', arcH: 400 }).main.E - BC.arcFlash({ arcEC: 'HOA', arcH: 900 }).main.E) < 1e-9, '');
+    truthy('Calculator defaults give a valid arc flash result', BC.arcFlash(BC.DEFAULT_INPUTS).errors.length === 0, '');
 
     // --- performance
     var t0 = performance.now();

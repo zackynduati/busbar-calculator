@@ -5,6 +5,7 @@
   var D = BC.DEFAULT_INPUTS;
 
   // ------------------------------------------------------------ helpers
+  function opt2(obj) { return Object.keys(obj).map(function (k) { return [k, obj[k]]; }); }
   function opt(obj) { return Object.keys(obj).map(function (k) { return [k, obj[k].label]; }); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
   function fmt(v, d) {
@@ -117,6 +118,19 @@
       { id: 'lube', label: 'Thread condition (nut factor K)', type: 'select', full: true, options: Object.keys(BC.LUBRICATION).map(function (k) { return [k, BC.LUBRICATION[k].label + ' — K ' + BC.LUBRICATION[k].K.toFixed(2)]; }) },
       { id: 'washer', label: 'Washers', type: 'select', full: true, options: opt(BC.WASHERS) },
       { id: 'overlap', label: 'Lap overlap length', unit: 'mm', type: 'number', min: 0, step: 5, hint: '0 = equal to bar width' }
+    ] },
+    { id: 'arc', title: 'Arc flash (IEEE 1584-2018)', open: false, fields: [
+      { id: 'arcVoc', label: 'System voltage (line to line)', unit: 'V', type: 'number', min: 208, max: 15000, step: 5, hint: '208 V – 15 kV' },
+      { id: 'arcIbf', label: 'Bolted fault current at the busbars Ibf', unit: 'kA', type: 'number', min: 0.2, step: 1, hint: 'Prospective short-circuit current at the point of the fault' },
+      { id: 'arcEC', label: 'Electrode configuration', type: 'select', full: true, options: opt2(BC.ARC_EC) },
+      { id: 'arcClass', label: 'Typical equipment (fills gap, distance and box size)', type: 'select', full: true, options: Object.keys(BC.ARC_CLASSES).map(function (k) { return [k, BC.ARC_CLASSES[k].label]; }) },
+      { id: 'arcGap', label: 'Gap between conductors G', unit: 'mm', type: 'number', min: 6, step: 1, hint: 'Bar to bar, 6.35 – 76.2 mm at 600 V and below' },
+      { id: 'arcDist', label: 'Working distance D', unit: 'mm', type: 'number', min: 305, step: 10, hint: 'Face to the arc, at least 305 mm' },
+      { id: 'arcH', label: 'Enclosure height', unit: 'mm', type: 'number', min: 100, step: 10, show: function (s) { return s.arcEC !== 'VOA' && s.arcEC !== 'HOA'; } },
+      { id: 'arcW', label: 'Enclosure width', unit: 'mm', type: 'number', min: 100, step: 10, show: function (s) { return s.arcEC !== 'VOA' && s.arcEC !== 'HOA'; } },
+      { id: 'arcDepth', label: 'Enclosure depth', unit: 'mm', type: 'number', min: 50, step: 10, show: function (s) { return s.arcEC !== 'VOA' && s.arcEC !== 'HOA'; } },
+      { id: 'arcTmax', label: 'Arcing time at maximum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'Clearing time of the protection upstream of the fault' },
+      { id: 'arcTmin', label: 'Arcing time at minimum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'The arc current is lower, so the protection may be slower' }
     ] },
     { id: 'assume', title: 'Enclosure assumptions', open: false, custom: true }
   ];
@@ -254,6 +268,14 @@
       state[key] = e.target.value;
       if (key === 'material' && e.type === 'change') onMaterialChange();
       if (key === 'temper' && e.type === 'change') onTemperChange();
+      if (key === 'arcClass' && e.type === 'change' && BC.ARC_CLASSES[state.arcClass] && state.arcClass !== 'custom') {
+        var cl = BC.ARC_CLASSES[state.arcClass];
+        setField('arcGap', cl.G); setField('arcDist', cl.D); setField('arcH', cl.H); setField('arcW', cl.W); setField('arcDepth', cl.Dp);
+      }
+      if (['arcGap', 'arcDist', 'arcH', 'arcW', 'arcDepth'].indexOf(key) >= 0 && state.arcClass !== 'custom') {
+        var c0 = BC.ARC_CLASSES[state.arcClass];
+        if (c0 && Number(state[key]) !== c0[{ arcGap: 'G', arcDist: 'D', arcH: 'H', arcW: 'W', arcDepth: 'Dp' }[key]]) setField('arcClass', 'custom');
+      }
       if (key === 'width' || key === 'thick') autosizeStale = true;
       refreshVisibility();
       writeHash();
@@ -328,6 +350,7 @@
       kpi('Short-circuit stress', me.ok, fmt(me.sigTot) + ' <small>MPa</small>', 'Limit ' + fmt(me.limTot) + ' MPa · max span ' + fmt(me.lmax, 0) + ' mm', me.sigTot / me.limTot) +
       kpi('Clearance during a fault', r.insul.ok, fmt(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 1) + ' <small>mm</small>', 'Minimum ' + fmt(r.insul.clearMin, 1) + ' mm · bars deflect ' + fmt(r.insul.deflection, 1) + ' mm' + (r.insul.elastic ? ' (elastic)' : ' (yielding)'), r.insul.clearMin / Math.max(Math.min(r.insul.clearPPfault, r.insul.clearEnclFault), 0.001)) +
       kpi('Support load per phase', r.sup.ok, fmt(r.sup.Fd / 1000, 1) + ' <small>kN</small>', r.sup.nSel + ' supports at ' + fmt(inp.span) + ' mm · bars ' + fmt(r.sup.mass) + ' kg', null) +
+      arcKpi(inp) +
       (jt ? kpi('Joint tightening torque', null, fmt(jt.torque, jt.torque < 20 ? 1 : 0) + ' <small>N·m</small>', jt.count + ' × ' + jt.size + ' ' + esc(inp.grade) + ' · preload ' + fmt(jt.preload.F / 1000, 1) + ' kN each', null) : '') +
       '</div>';
 
@@ -337,8 +360,69 @@
       (inp.mounting === 'flat' ? 'bars flat' : inp.mounting === 'vertical' ? 'vertical run (plan view)' : 'bars on edge') + '. Shading shows current density relative to a uniform (DC) distribution at ' + fmt(inp.freq) + ' Hz.</p>' +
       '<div class="grid-2 grid-xsec"><div>' + drawSection(r) + '</div><div>' + sharingTable(r) + '</div></div></div>';
 
-    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + autosizePanel() + methodPanel() + inputsSummary(r);
+    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + arcPanel(r) + autosizePanel() + methodPanel() + inputsSummary(r);
     return html;
+  }
+
+  // ---- arc flash (IEEE 1584-2018)
+  var arcCache = { key: null, val: null };
+  function arcOf(inp) {
+    var key = JSON.stringify([inp.arcVoc, inp.arcIbf, inp.arcEC, inp.arcGap, inp.arcDist, inp.arcH, inp.arcW, inp.arcDepth, inp.arcTmax, inp.arcTmin, inp.Icw]);
+    if (arcCache.key !== key) arcCache = { key: key, val: BC.arcFlash(inp) };
+    return arcCache.val;
+  }
+  function ppeBadge(ppe) {
+    var cls = ppe.cat <= 2 ? 'ok' : ppe.cat <= 4 ? 'warn' : 'bad';
+    return '<span class="badge ' + cls + '">' + (ppe.cat === 0 ? 'BELOW 1.2' : ppe.cat > 4 ? 'OVER 40' : 'CAT ' + ppe.cat) + '</span>';
+  }
+  function arcKpi(inp) {
+    var a = arcOf(inp);
+    if (a.errors.length) return '<div class="card kpi"><div class="label"><span>Arc flash incident energy</span><span class="badge warn">CHECK INPUTS</span></div><div class="value">–</div><div class="sub">' + esc(a.errors[0]) + '</div></div>';
+    var m = a.main;
+    return '<div class="card kpi"><div class="label"><span>Arc flash incident energy</span>' + ppeBadge(m.ppe) + '</div>' +
+      '<div class="value">' + fmt(m.cal, 1) + ' <small>cal/cm²</small></div>' +
+      '<div class="sub">At ' + fmt(a.inputs.D) + ' mm · boundary ' + fmt(m.AFB / 1000, 2) + ' m · arc ' + fmt(m.max.Iarc, 1) + ' kA</div></div>';
+  }
+  function arcPanel(r) {
+    var inp = r.inputs, a = arcOf(inp);
+    if (a.errors.length) {
+      return '<details class="card panel" open><summary><span>Arc flash incident energy (IEEE 1584-2018)</span><span class="badge warn">CHECK INPUTS</span></summary><ul class="notes">' +
+        a.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></details>';
+    }
+    var m = a.main, p = a.inputs, open = a.ec === 'VOA' || a.ec === 'HOA';
+    function scen(label, s) {
+      return '<tr><td>' + label + '</td><td class="num">' + fmt(s.Iarc, 2) + ' kA</td><td class="num">' + fmt(s.T, 0) + ' ms</td><td class="num">' + fmt(s.E / 4.184, 2) + ' cal/cm²<br><span class="muted">' + fmt(s.E, 2) + ' J/cm²</span></td><td class="num">' + fmt(s.AFB, 0) + ' mm</td></tr>';
+    }
+    var left = '<table class="data"><tr><th>Scenario</th><th class="r">Arcing current</th><th class="r">Arcing time</th><th class="r">Incident energy</th><th class="r">Boundary</th></tr>' +
+      scen('Maximum arcing current' + (m.worst === 'max' ? ' (worst)' : ''), m.max) +
+      scen('Minimum arcing current' + (m.worst === 'min' ? ' (worst)' : ''), m.min) + '</table>' +
+      '<p class="lead" style="margin-top:10px">' + ppeBadge(m.ppe) + ' ' + esc(m.ppe.label) + '. The arc flash boundary is the distance at which the energy has fallen to 1.2 cal/cm² (5.0 J/cm²).</p>';
+    var right = '<table class="data">' +
+      '<tr><td>System voltage · bolted fault current</td><td class="num">' + fmt(p.Voc) + ' V · ' + fmt(p.Ibf, 1) + ' kA</td></tr>' +
+      '<tr><td>Electrode configuration</td><td class="num">' + esc(a.ec) + '</td></tr>' +
+      '<tr><td>Gap · working distance</td><td class="num">' + fmt(p.G, 1) + ' mm · ' + fmt(p.D, 1) + ' mm</td></tr>' +
+      '<tr><td>Arcing-current variation factor</td><td class="num">' + fmt(m.varCF, 3) + '</td></tr>' +
+      (open ? '<tr><td>Enclosure correction factor</td><td class="num">1.000 (open air)</td></tr>'
+            : '<tr><td>Enclosure ' + fmt(p.H) + ' × ' + fmt(p.W) + ' × ' + fmt(p.Dp) + ' mm (' + esc(m.enclosure.type) + ')</td><td class="num">equivalent size ' + fmt(m.enclosure.EES, 1) + ' in</td></tr>' +
+              '<tr><td>Enclosure size correction factor CF</td><td class="num">' + fmt(m.CF, 3) + '</td></tr>') +
+      '</table>';
+    var tt = '<table class="data" style="margin-top:12px"><tr><th>To keep the energy at or below</th><th class="r">Clear the fault within</th></tr>' +
+      [[1.2, m.tFor1_2, ' (below the PPE categories)'], [4, m.tFor4, ' (Category 1)'], [8, m.tFor8, ' (Category 2)']].map(function (x) {
+        return '<tr><td>' + x[0] + ' cal/cm²' + x[2] + '</td><td class="num">' + fmt(x[1], 0) + ' ms</td></tr>';
+      }).join('') + '</table>' +
+      '<p class="hint muted" style="margin:6px 0 0">Incident energy grows in direct proportion to the arcing time, so these times follow from the result above. They hold for both the maximum and minimum current cases.</p>';
+    var cmp = '<h4 style="margin:16px 0 6px">All electrode configurations</h4><div class="table-scroll"><table class="data"><tr><th>Configuration</th><th class="r">Arcing current</th><th class="r">Incident energy</th><th class="r">Boundary</th><th></th></tr>' +
+      a.all.map(function (c) {
+        return '<tr' + (c.ec === a.ec ? ' class="highlight"' : '') + '><td>' + esc(c.ec) + (c.ec === a.ec ? ' (selected)' : '') + (c === a.worstEC ? ' · highest' : '') + '</td><td class="num">' + fmt(c.max.Iarc, 2) + ' kA</td><td class="num">' + fmt(c.cal, 2) + ' cal/cm²</td><td class="num">' + fmt(c.AFB, 0) + ' mm</td><td>' + ppeBadge(c.ppe) + '</td></tr>';
+      }).join('') + '</table></div>';
+    var notes = '<ul class="notes muted">' +
+      '<li>Method: IEEE 1584-2018 empirical model (equations 1 to 25). It is not part of IEC 61439. The incident energy is worked out at both the maximum and the minimum arcing current, and the larger value is used.</li>' +
+      '<li>Pick the configuration that matches the equipment. Horizontal busbars in a compartment are HCB. Vertical busbars are VCB, or VCBB if a barrier ends the electrodes. If unsure, compare them in the table and use the highest.</li>' +
+      '<li>The arcing time is the clearing time of the protective device on the supply side of the fault, including its opening time. Instantaneous trips and arc-flash relays shorten it most. The minimum-current case often has a longer time.</li>' +
+      '<li>The PPE bands (1.2, 4, 8, 25 and 40 cal/cm²) are those of NFPA 70E. Above 40 cal/cm² no PPE category applies. The result does not replace a site study, protection coordination or the labelling rules.</li></ul>';
+    return '<details class="card panel" open><summary><span>Arc flash incident energy (IEEE 1584-2018)</span>' + ppeBadge(m.ppe) + '</summary>' +
+      (a.warnings.length ? '<ul class="notes">' + a.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') +
+      '<div class="grid-2"><div>' + left + tt + '</div><div>' + right + '</div></div>' + cmp + notes + '</details>';
   }
 
   function kpi(label, ok, value, sub, frac) {
@@ -660,8 +744,8 @@
       '<h4>4. Short-circuit thermal</h4><p>Adiabatic heating from the operating temperature θᵢ to θ<sub>f</sub>: <span class="formula">S<sub>min</sub> = I<sub>cw</sub>√t / k</span> with k = K·√ln((θ<sub>f</sub>+β)/(θᵢ+β)), K = √(Q<sub>c</sub>(β+20)/ρ<sub>20</sub>) (IEC 60949). Recommended θ<sub>f</sub>: 200 °C copper, 180 °C aluminium (IEC 60865-1).</p>' +
       '<h4>5. Short-circuit forces (IEC 60865-1 simplified method)</h4><p>i<sub>p</sub> = n·I<sub>cw</sub> with n from IEC 61439-1 Table 7. Centre-phase force F<sub>m3</sub> = (μ₀/2π)(√3/2)i<sub>p</sub>²l/a<sub>m</sub>; sub-conductor force F<sub>s</sub> = (μ₀/2π)(i<sub>p</sub>/n)²lₛ/aₛ. Effective distances a<sub>m</sub>, aₛ are integrated numerically for the actual rectangular sections. Stresses σ<sub>m</sub> = V<sub>σ</sub>V<sub>r</sub>βF<sub>m3</sub>l/(8Z<sub>m</sub>), σₛ = V<sub>σ</sub>V<sub>r</sub>Fₛlₛ/(16Zₛ); require σ<sub>tot</sub> ≤ q·R<sub>p0.2</sub> and σₛ ≤ R<sub>p0.2</sub>. Support force F<sub>d</sub> = V<sub>F</sub>V<sub>r</sub>·α·F<sub>m3</sub>. Natural-frequency (dynamic) reduction factors are not applied (conservative).</p>' +
       '<h4>6. Bolted joints</h4><p>Preload F = (% of proof)·A<sub>s</sub>·R<sub>p</sub> (ISO 898-1 / ISO 3506-1); torque <span class="formula">T = K·F·d</span>. Bolt patterns follow common practice (cf. DIN 43673 / CDA Pub. 22). Checks: mean contact pressure over the overlap and washer bearing pressure vs. the bar\'s 0.2 % proof stress.</p>' +
-      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
-      '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
+      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>9. Arc flash (IEEE 1584-2018)</h4><p>Empirical model for three-phase AC at 208 V to 15 kV. The intermediate arcing current comes from equation 1 for the electrode configuration (VCB, VCBB, HCB, VOA, HOA), gap and bolted fault current; below 600 V the final arcing current follows from equation 25. The minimum arcing current applies the variation factor of Table 2 (equation 2). Incident energy at the working distance uses equations 3 to 6 and the enclosure size correction factor of Tables 6 and 7 (equations 11 to 15). Between 600 V and 14.3 kV the results are interpolated (equations 16 to 24). The arc flash boundary is the distance at which the energy reaches 1.2 cal/cm². The energy is worked out at maximum and minimum arcing current, and the larger value is reported. The model is valid for arcing times the protection can actually deliver and for the ranges listed in the standard; inputs outside those ranges are refused.</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment testing (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
+      '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEEE 1584-2018 — Guide for performing arc-flash hazard calculations. Coefficients checked against the open-source implementation github.com/LiaungYip/arcflash (MIT) and the Annex D examples.</li><li>NFPA 70E — Standard for electrical safety in the workplace (PPE categories).</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
   }
 
   function inputsSummary(r) {
