@@ -17,6 +17,7 @@
   <ol id="out"></ol>
   <script src="../js/busbar-engine.js"></script>
   <script src="../js/arcflash.js"></script>
+  <script src="../js/protection.js"></script>
   <script>
   (function () {
     var BC = window.BusbarCalc, out = document.getElementById('out'), results = [];
@@ -249,6 +250,47 @@
     truthy('Voltage above 15 kV is rejected', BC.arcFlash({ arcVoc: 20000 }).errors.length > 0, '');
     truthy('Open-air configurations ignore the enclosure', Math.abs(BC.arcFlash({ arcEC: 'HOA', arcH: 400 }).main.E - BC.arcFlash({ arcEC: 'HOA', arcH: 900 }).main.E) < 1e-9, '');
     truthy('Calculator defaults give a valid arc flash result', BC.arcFlash(BC.DEFAULT_INPUTS).errors.length === 0, '');
+
+    // --- protection and fault level
+    var pr = BC.protection(BC.DEFAULT_INPUTS);
+    truthy('Protection defaults give no errors', pr.errors.length === 0, (pr.errors || []).join('; '));
+    check('LV bolted fault, 1500 kVA 6 % on 250 MVA [kA]', pr.fl.IkMax / 1000, 31.5, 31.7);
+    check('LV bolted fault, minimum source [kA]', pr.fl.IkMin / 1000, 27.7, 27.9);
+    check('Transformer ratio 11 kV / 415 V', pr.fl.ratio, 26.5, 26.51);
+    var si = { curve: 'SI', is: 100, tms: 0.2, dt: 0.5, inst: 0, tinst: 0.05 };
+    check('IEC standard inverse at 10 x Is, TMS 0.2 [s]', BC.relayTime(1000, si), 0.5934, 0.5946);
+    check('Relay does not trip at the pickup', BC.relayTime(100, si), 1000, 1000);
+    check('Relay instantaneous element', BC.relayTime(5000, Object.assign({}, si, { inst: 2000 })), 0.05, 0.05);
+    check('Definite-time relay', BC.relayTime(500, { curve: 'DT', is: 100, tms: 0, dt: 0.7, inst: 0, tinst: 0.05 }), 0.7, 0.7);
+    var ac = { inn: 2500, ir: 1, ltSlope: 'i2t', tr: 12, isd: 5, tsd: 0.2, slope: 'flat', pivot: 8, ii: 10, arms: false, armsPu: 2.5, hi: 0, topen: 0.05 };
+    var ac8 = Object.assign({}, ac, { isd: 8 });
+    check('ACB long delay at 6 x Ir equals tr (total clearing time)', BC.acbTime(15000, ac8), 12, 12);
+    check('ACB long delay at 3 x Ir (I2t)', BC.acbTime(7500, ac8), 47.999, 48.001);
+    check('ACB long delay I4t at 3 x Ir (tr capped at 7 s)', BC.acbTime(7500, Object.assign({}, ac8, { ltSlope: 'i4t' })), 111.99, 112.01);
+    check('ACB long delay I4t with tr 4 s at 6 x Ir', BC.acbTime(15000, Object.assign({}, ac8, { ltSlope: 'i4t', tr: 4 })), 3.999, 4.001);
+    check('ACB long delay It at 3 x Ir', BC.acbTime(7500, Object.assign({}, ac8, { ltSlope: 'it' })), 23.999, 24.001);
+    check('ACB long delay I0.5t at 3 x Ir', BC.acbTime(7500, Object.assign({}, ac8, { ltSlope: 'i05t' })), 16.96, 16.98);
+    check('ACB no trip below 1.1 x Ir', BC.acbTime(2700, ac), 1000, 1000);
+    check('ACB short delay (flat)', BC.acbTime(14000, ac), 0.25, 0.25);
+    check('ACB short delay I2t below the pivot', BC.acbTime(10000, Object.assign({}, ac, { slope: 'i2t', isd: 3 })), 0.8499, 0.8501);
+    check('ACB short delay I2t above 8 x Ir is flat', BC.acbTime(22000, Object.assign({}, ac, { slope: 'i2t', isd: 3 })), 0.2499, 0.2501);
+    check('ACB instantaneous', BC.acbTime(30000, ac), 0.05, 0.05);
+    check('ACB instantaneous off', BC.acbTime(60000, Object.assign({}, ac, { ii: 0 })), 0.25, 0.25);
+    check('Maintenance mode trips at its pickup with no intentional delay', BC.acbTime(6300, Object.assign({}, ac, { arms: true })), 0.05, 0.05);
+    check('Maintenance mode off leaves the short delay', BC.acbTime(6300, Object.assign({}, ac, { isd: 2 })), 0.25, 0.25);
+    check('Maintenance mode off leaves the long delay below the short delay pickup', BC.acbTime(6300, ac), 68, 68.1);
+    check('Frame high instantaneous trips at the withstand even with Ii off', BC.acbTime(56000, Object.assign({}, ac, { ii: 0, hi: 55000 })), 0.05, 0.05);
+    truthy('Four arc flash cases (2 locations x 2 source levels)', pr.results.length === 4 && pr.results.every(function (r) { return !r.errors.length; }), '');
+    var pbus = pr.results.filter(function (r) { return r.loc.id === 'bus' && r.cs.id === 'max'; })[0];
+    var plin = pr.results.filter(function (r) { return r.loc.id === 'line' && r.cs.id === 'max'; })[0];
+    check('Busbar arcing time at maximum current = ACB trip time at the arcing current [ms]', pbus.tmax, pbus.loc.clr(pbus.Imax) * 1000 - 0.001, pbus.loc.clr(pbus.Imax) * 1000 + 0.001);
+    truthy('The line side of the ACB is cleared more slowly than the busbars', plin.tmax > pbus.tmax, plin.tmax + ' ms vs ' + pbus.tmax + ' ms');
+    truthy('The worst case is reported', pr.worst && pr.worst.arc.main.E >= pbus.arc.main.E, '');
+    var fast = BC.protection(Object.assign({}, BC.DEFAULT_INPUTS, { acbTsd: 0.1 }));
+    truthy('A shorter short-delay time lowers the busbar energy', fast.results[0].arc.main.E < pr.results[0].arc.main.E, '');
+    var off = BC.protection(Object.assign({}, BC.DEFAULT_INPUTS, { acbIi: 2 }));
+    truthy('Lower instantaneous pickup trips the arc instantly and cuts the energy', off.results[0].tmax < 100, off.results[0].tmax + ' ms');
+    truthy('Bad transformer data is refused', BC.protection(Object.assign({}, BC.DEFAULT_INPUTS, { protKva: 0 })).errors.length > 0, '');
 
     // --- performance
     var t0 = performance.now();

@@ -119,9 +119,41 @@
       { id: 'washer', label: 'Washers', type: 'select', full: true, options: opt(BC.WASHERS) },
       { id: 'overlap', label: 'Lap overlap length', unit: 'mm', type: 'number', min: 0, step: 5, hint: '0 = equal to bar width' }
     ] },
+    { id: 'prot', title: 'Protection & fault level', open: false, fields: [
+      { id: 'protKva', label: 'Transformer rating', unit: 'kVA', type: 'number', min: 1, step: 50 },
+      { id: 'protKvHV', label: 'Transformer HV voltage', unit: 'kV', type: 'number', min: 1, step: 0.5 },
+      { id: 'protZ', label: 'Transformer impedance', unit: '%', type: 'number', min: 1, step: 0.5, hint: 'From the nameplate' },
+      { id: 'protMVAmax', label: 'Source fault level, maximum', unit: 'MVA', type: 'number', min: 1, step: 10, hint: 'KenGen: placeholder until the utility confirms' },
+      { id: 'protMVAmin', label: 'Source fault level, minimum', unit: 'MVA', type: 'number', min: 1, step: 10, hint: 'KenGen: placeholder until the utility confirms' },
+      { id: 'acbIn', label: 'ACB rated current In (IZMX40, PXR 20)', unit: 'A', type: 'number', min: 100, step: 100 },
+      { id: 'acbIr', label: 'Long delay pickup Ir', unit: '× In', type: 'select', options: [['0.4', '0.4'], ['0.5', '0.5'], ['0.6', '0.6'], ['0.7', '0.7'], ['0.75', '0.75'], ['0.8', '0.8'], ['0.9', '0.9'], ['0.95', '0.95'], ['0.98', '0.98'], ['1', '1']], hint: 'PXR 20 steps. The unit trips at 105 to 115 % of Ir' },
+      { id: 'acbLtSlope', label: 'Long delay slope', type: 'select', options: [['i2t', 'I²t (default)'], ['i4t', 'I⁴t'], ['i05t', 'I⁰·⁵t'], ['it', 'It']] },
+      { id: 'acbTr', label: 'Long delay time tr at 6 × Ir', unit: 's', type: 'select', options: [['0.5', '0.5'], ['1', '1'], ['2', '2'], ['4', '4'], ['7', '7'], ['10', '10'], ['12', '12'], ['15', '15'], ['20', '20'], ['24', '24']], hint: 'Total clearing time at 6 × Ir' },
+      { id: 'acbIsd', label: 'Short delay pickup Isd', unit: '× Ir', type: 'select', options: [['1.5', '1.5'], ['2', '2'], ['2.5', '2.5'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6'], ['7', '7'], ['8', '8'], ['10', '10']] },
+      { id: 'acbSlope', label: 'Short delay slope', type: 'select', options: [['flat', 'Flat'], ['i2t', 'I²t (below 8 × Ir)']] },
+      { id: 'acbTsd', label: 'Short delay time tsd', unit: 's', type: 'select', options: function (s) { return (s.acbSlope === 'i2t' ? ['0.1', '0.3', '0.4', '0.5'] : ['0', '0.1', '0.2', '0.3', '0.4', '0.5']).map(function (v) { return [v, v]; }); }, hint: 'I²t times are defined at 8 × Ir' },
+      { id: 'acbIi', label: 'Instantaneous pickup Ii', unit: '× In', type: 'select', options: [['0', 'Off'], ['2', '2'], ['4', '4'], ['5', '5'], ['6', '6'], ['7', '7'], ['8', '8'], ['10', '10'], ['12', '12'], ['15', '15']], hint: 'The frame high instantaneous trips at the withstand rating whatever is set' },
+      { id: 'acbArms', label: 'Maintenance mode (ARMS)', type: 'select', options: [['off', 'Off'], ['on', 'On']], hint: 'Option R of the PXR 20. Trips with no intentional delay above its pickup' },
+      { id: 'acbArmsPu', label: 'Maintenance mode pickup', unit: '× In', type: 'select', options: [['2.5', '2.5'], ['4', '4'], ['6', '6'], ['8', '8'], ['10', '10']], show: function (s) { return s.acbArms === 'on'; } },
+      { id: 'acbTopen', label: 'Breaker opening time', unit: 's', type: 'number', min: 0, step: 0.01, hint: 'Added to short delay and instantaneous trips. Not in the manual: take it from the IZMX40 curves or data sheet' },
+      { id: 'vCurve', label: 'Transformer relay curve (VIP 410)', type: 'select', options: BC.RELAY_CURVES.map(function (c) { return [c, c]; }), hint: 'Generic until confirmed' },
+      { id: 'vIs', label: 'Transformer relay pickup', unit: 'A', type: 'number', min: 1, step: 5, hint: '11 kV side' },
+      { id: 'vTms', label: 'Transformer relay time multiplier', type: 'number', min: 0.01, step: 0.05, show: function (s) { return s.vCurve !== 'DT'; } },
+      { id: 'vDt', label: 'Transformer relay definite time', unit: 's', type: 'number', min: 0.01, step: 0.1, show: function (s) { return s.vCurve === 'DT'; } },
+      { id: 'vInst', label: 'Transformer relay instantaneous', unit: 'A', type: 'number', min: 0, step: 50, hint: '0 = off. 11 kV side' },
+      { id: 'vTinst', label: 'Transformer relay instantaneous time', unit: 's', type: 'number', min: 0, step: 0.01 },
+      { id: 'uCurve', label: 'Utility relay curve (KenGen)', type: 'select', options: BC.RELAY_CURVES.map(function (c) { return [c, c]; }), hint: 'Generic until KenGen confirms' },
+      { id: 'uIs', label: 'Utility relay pickup', unit: 'A', type: 'number', min: 1, step: 5, hint: '11 kV side' },
+      { id: 'uTms', label: 'Utility relay time multiplier', type: 'number', min: 0.01, step: 0.05, show: function (s) { return s.uCurve !== 'DT'; } },
+      { id: 'uDt', label: 'Utility relay definite time', unit: 's', type: 'number', min: 0.01, step: 0.1, show: function (s) { return s.uCurve === 'DT'; } },
+      { id: 'uInst', label: 'Utility relay instantaneous', unit: 'A', type: 'number', min: 0, step: 50, hint: '0 = off. 11 kV side' },
+      { id: 'uTinst', label: 'Utility relay instantaneous time', unit: 's', type: 'number', min: 0, step: 0.01 },
+      { id: 'protGm', label: 'Grading margin', unit: 's', type: 'number', min: 0.05, step: 0.05, hint: '0.3 to 0.4 s is usual' }
+    ] },
     { id: 'arc', title: 'Arc flash (IEEE 1584-2018)', open: false, fields: [
+      { id: 'arcSource', label: 'Fault current and arcing time', type: 'select', full: true, options: [['protection', 'From the protection settings (transformer, source, ACB trip curve)'], ['manual', 'Enter them by hand']] },
       { id: 'arcVoc', label: 'System voltage (line to line)', unit: 'V', type: 'number', min: 208, max: 15000, step: 5, hint: '208 V – 15 kV' },
-      { id: 'arcIbf', label: 'Bolted fault current at the busbars Ibf', unit: 'kA', type: 'number', min: 0.2, step: 1, hint: 'Prospective short-circuit current at the point of the fault' },
+      { id: 'arcIbf', label: 'Bolted fault current at the busbars Ibf', unit: 'kA', type: 'number', min: 0.2, step: 1, hint: 'Prospective short-circuit current at the point of the fault', show: function (s) { return s.arcSource === 'manual'; } },
       { id: 'arcEC', label: 'Electrode configuration', type: 'select', full: true, options: opt2(BC.ARC_EC) },
       { id: 'arcClass', label: 'Typical equipment (fills gap, distance and box size)', type: 'select', full: true, options: Object.keys(BC.ARC_CLASSES).map(function (k) { return [k, BC.ARC_CLASSES[k].label]; }) },
       { id: 'arcGap', label: 'Gap between conductors G', unit: 'mm', type: 'number', min: 6, step: 1, hint: 'Bar to bar, 6.35 – 76.2 mm at 600 V and below' },
@@ -129,8 +161,8 @@
       { id: 'arcH', label: 'Enclosure height', unit: 'mm', type: 'number', min: 100, step: 10, show: function (s) { return s.arcEC !== 'VOA' && s.arcEC !== 'HOA'; } },
       { id: 'arcW', label: 'Enclosure width', unit: 'mm', type: 'number', min: 100, step: 10, show: function (s) { return s.arcEC !== 'VOA' && s.arcEC !== 'HOA'; } },
       { id: 'arcDepth', label: 'Enclosure depth', unit: 'mm', type: 'number', min: 50, step: 10, show: function (s) { return s.arcEC !== 'VOA' && s.arcEC !== 'HOA'; } },
-      { id: 'arcTmax', label: 'Arcing time at maximum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'Clearing time of the protection upstream of the fault' },
-      { id: 'arcTmin', label: 'Arcing time at minimum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'The arc current is lower, so the protection may be slower' }
+      { id: 'arcTmax', label: 'Arcing time at maximum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'Clearing time of the protection upstream of the fault', show: function (s) { return s.arcSource === 'manual'; } },
+      { id: 'arcTmin', label: 'Arcing time at minimum current', unit: 'ms', type: 'number', min: 1, step: 5, hint: 'The arc current is lower, so the protection may be slower', show: function (s) { return s.arcSource === 'manual'; } }
     ] },
     { id: 'assume', title: 'Enclosure assumptions', open: false, custom: true }
   ];
@@ -276,6 +308,11 @@
         var c0 = BC.ARC_CLASSES[state.arcClass];
         if (c0 && Number(state[key]) !== c0[{ arcGap: 'G', arcDist: 'D', arcH: 'H', arcW: 'W', arcDepth: 'Dp' }[key]]) setField('arcClass', 'custom');
       }
+      if (key === 'acbSlope' && e.type === 'change') {
+        var okT = state.acbSlope === 'i2t' ? ['0.1', '0.3', '0.4', '0.5'] : ['0', '0.1', '0.2', '0.3', '0.4', '0.5'];
+        if (okT.indexOf(state.acbTsd) < 0) { var nt = state.acbSlope === 'i2t' ? '0.3' : '0.2'; state.acbTsd = nt; var te = document.querySelector('[data-key="acbTsd"]'); if (te) { te.innerHTML = okT.map(function (v) { return '<option value="' + v + '"' + (v === nt ? ' selected' : '') + '>' + v + '</option>'; }).join(''); } }
+        else { var te2 = document.querySelector('[data-key="acbTsd"]'); if (te2) te2.innerHTML = okT.map(function (v) { return '<option value="' + v + '"' + (v === state.acbTsd ? ' selected' : '') + '>' + v + '</option>'; }).join(''); }
+      }
       if (key === 'width' || key === 'thick') autosizeStale = true;
       refreshVisibility();
       writeHash();
@@ -360,13 +397,84 @@
       (inp.mounting === 'flat' ? 'bars flat' : inp.mounting === 'vertical' ? 'vertical run (plan view)' : 'bars on edge') + '. Shading shows current density relative to a uniform (DC) distribution at ' + fmt(inp.freq) + ' Hz.</p>' +
       '<div class="grid-2 grid-xsec"><div>' + drawSection(r) + '</div><div>' + sharingTable(r) + '</div></div></div>';
 
-    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + arcPanel(r) + autosizePanel() + methodPanel() + inputsSummary(r);
+    html += thermalPanel(r) + scPanel(r) + mechPanel(r) + insulPanel(r) + supportPanel(r) + (jt ? jointPanel(r) : '') + protPanel(r) + arcPanel(r) + autosizePanel() + methodPanel() + inputsSummary(r);
     return html;
+  }
+
+  // ---- protection and fault level
+  var protCache = { key: null, val: null };
+  function protOf(inp) {
+    var o = {};
+    Object.keys(inp).forEach(function (k) { if (/^(arc|prot|acb|v[A-Z]|u[A-Z])/.test(k) || k === 'Icw') o[k] = inp[k]; });
+    var key = JSON.stringify(o);
+    if (protCache.key !== key) protCache = { key: key, val: BC.protection(inp) };
+    return protCache.val;
+  }
+  function tFmt(t, cap) { return t >= cap ? 'no trip' : fmt(t, t < 1 ? 3 : t < 10 ? 2 : 1) + ' s'; }
+
+  function tccChart(pr) {
+    var W = 640, H = 380, ML = 54, MR = 14, MT = 12, MB = 40, XS = 200, XE = 100000, YS = 0.01, YE = 1000;
+    var lx = Math.log10, X = function (I) { return ML + (lx(I) - lx(XS)) / (lx(XE) - lx(XS)) * (W - ML - MR); };
+    var Y = function (t) { return MT + (lx(YE) - lx(Math.min(YE, Math.max(YS, t)))) / (lx(YE) - lx(YS)) * (H - MT - MB); };
+    var s = '<svg class="tcc" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Time-current curves of the ACB and the 11 kV relays on the LV side">';
+    for (var e = -2; e <= 3; e++) s += '<line class="grid" x1="' + ML + '" x2="' + (W - MR) + '" y1="' + Y(Math.pow(10, e)).toFixed(1) + '" y2="' + Y(Math.pow(10, e)).toFixed(1) + '"/><text x="' + (ML - 6) + '" y="' + (Y(Math.pow(10, e)) + 4).toFixed(1) + '" text-anchor="end">' + (e < 0 ? Math.pow(10, e).toFixed(-e) : Math.pow(10, e)) + '</text>';
+    [200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000].forEach(function (I) {
+      s += '<line class="grid" x1="' + X(I).toFixed(1) + '" x2="' + X(I).toFixed(1) + '" y1="' + MT + '" y2="' + (H - MB) + '"/><text x="' + X(I).toFixed(1) + '" y="' + (H - MB + 15) + '" text-anchor="middle">' + (I >= 1000 ? (I / 1000) + 'k' : I) + '</text>';
+    });
+    s += '<text x="' + ((ML + W - MR) / 2) + '" y="' + (H - 6) + '" text-anchor="middle">Current on the LV side (A)</text><text transform="translate(12 ' + ((MT + H - MB) / 2) + ') rotate(-90)" text-anchor="middle">Time (s)</text>';
+    var pts = [], n = 150;
+    for (var i = 0; i < n; i++) pts.push(XS * Math.pow(XE / XS, i / (n - 1)));
+    var a = pr.acb, Ir = a.ir * a.inn;
+    [Ir * 1.1, a.isd * Ir, a.ii * a.inn, a.pivot * Ir].forEach(function (t) { if (t > XS && t < XE) { pts.push(t * 0.999999); pts.push(t * 1.000001); } });
+    pts.sort(function (p, q) { return p - q; });
+    [{ f: pr.tDAM, c: 'var(--bad)', w: 2, d: '' }, { f: pr.tUP, c: 'var(--muted)', w: 2, d: '7 5' }, { f: pr.tVIP, c: 'var(--ok)', w: 2.4, d: '' }, { f: pr.tACB, c: 'var(--accent)', w: 2.8, d: '' }].forEach(function (sr) {
+      var d = ''; pts.forEach(function (I, k) { d += (k ? 'L' : 'M') + X(I).toFixed(1) + ' ' + Y(sr.f(I)).toFixed(1); });
+      s += '<path d="' + d + '" fill="none" stroke="' + sr.c + '" stroke-width="' + sr.w + '"' + (sr.d ? ' stroke-dasharray="' + sr.d + '"' : '') + ' stroke-linejoin="round"/>';
+    });
+    // marks: bolted fault and arcing currents (busbar case, maximum source)
+    var bus = pr.results.filter(function (r) { return r.loc.id === 'bus' && r.cs.id === 'max' && !r.errors.length; })[0];
+    function vline(I, lab, dash, row) { if (I > XS && I < XE) s += '<line x1="' + X(I).toFixed(1) + '" x2="' + X(I).toFixed(1) + '" y1="' + MT + '" y2="' + (H - MB) + '" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="' + dash + '" opacity=".7"/><text x="' + (X(I) + 4).toFixed(1) + '" y="' + (MT + 12 + 13 * row) + '" class="tl">' + lab + '</text>'; }
+    vline(pr.fl.IkMax, 'Ik″ ' + fmt(pr.fl.IkMax / 1000, 1) + ' kA', '2 3', 0);
+    if (bus) { vline(bus.Imax, 'arc max ' + fmt(bus.Imax / 1000, 1) + ' kA', '5 3', 1); vline(bus.Imin, 'arc min ' + fmt(bus.Imin / 1000, 1) + ' kA', '5 3', 2); }
+    return s + '</svg>' +
+      '<div class="legend tcc-legend"><span><i style="background:var(--accent)"></i>ACB (PXR 20)</span><span><i style="background:var(--ok)"></i>Transformer relay</span><span><i style="background:var(--muted)"></i>Utility relay</span><span><i style="background:var(--bad)"></i>Transformer damage</span></div>';
+  }
+
+  function protPanel(r) {
+    var inp = r.inputs, pr = protOf(inp);
+    if (pr.errors.length) return '<details class="card panel" open><summary><span>Protection and fault level</span><span class="badge warn">CHECK INPUTS</span></summary><ul class="notes">' + pr.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></details>';
+    var fl = pr.fl, allOk = pr.grade.every(function (g) { return g.ok; });
+    var levels = '<table class="data">' +
+      '<tr><td>Transformer ' + fmt(pr.inputs.kva) + ' kVA, ' + fmt(pr.inputs.kvhv, 1) + ' kV / ' + fmt(pr.inputs.Vlv) + ' V, ' + fmt(pr.inputs.z, 1) + ' %</td><td class="num">ratio ' + fmt(fl.ratio, 2) + '</td></tr>' +
+      '<tr><td>Full-load current, 11 kV · LV</td><td class="num">' + fmt(fl.flcHV, 1) + ' A · ' + fmt(fl.flcLV, 0) + ' A</td></tr>' +
+      '<tr class="highlight"><td><strong>Bolted three-phase fault at the LV terminals, maximum source (' + fmt(pr.inputs.mvaMax) + ' MVA)</strong></td><td class="num"><strong>' + fmt(fl.IkMax / 1000, 2) + ' kA</strong></td></tr>' +
+      '<tr><td>Bolted three-phase fault at the LV terminals, minimum source (' + fmt(pr.inputs.mvaMin) + ' MVA)</td><td class="num">' + fmt(fl.IkMin / 1000, 2) + ' kA</td></tr>' +
+      '<tr><td>Bolted three-phase fault on the 11 kV bus, maximum source</td><td class="num">' + fmt(fl.ihvMax, 0) + ' A</td></tr>' +
+      '<tr><td>ACB short-time withstand against the fault level</td><td class="num">' + fmt(inp.Icw) + ' kA ' + badge(Number(inp.Icw) >= fl.IkMax / 1000, 'OK', 'TOO LOW') + '</td></tr>' +
+      '</table>';
+    var gr = '<div class="table-scroll"><table class="data"><tr><th>Fault</th><th class="r">Current</th><th class="r">ACB</th><th class="r">Transformer relay</th><th class="r">Utility relay</th><th class="r">Relay − ACB</th><th class="r">Utility − relay</th><th></th></tr>' +
+      pr.grade.map(function (g) {
+        return '<tr><td>' + esc(g.n) + '</td><td class="num">' + fmt(g.I / 1000, 2) + ' kA</td><td class="num">' + (g.ta === null ? 'n/a' : tFmt(g.ta, pr.CAP)) + '</td><td class="num">' + tFmt(g.tv, pr.CAP) + '</td><td class="num">' + tFmt(g.tu, pr.CAP) + '</td><td class="num">' + (g.mv === null ? 'n/a' : fmt(g.mv, 2) + ' s') + '</td><td class="num">' + fmt(g.mu, 2) + ' s</td><td>' + badge(g.ok) + '</td></tr>';
+      }).join('') + '</table></div>' +
+      '<p class="hint muted" style="margin:6px 0 0">Margins are checked against ' + fmt(pr.gm, 2) + ' s. Currents on the 11 kV side are referred to the LV side by the voltage ratio.</p>';
+    var notes = '<ul class="notes muted">' +
+      '<li><strong>ACB trip unit:</strong> the PXR 20 on the IZMX40, from Eaton manual MN013003EN (July 2021). Setting steps, the slopes, the 6 × Ir definition of the long delay time, the I²t short delay below 8 × Ir and the maintenance mode (ARMS) are as printed there. The manual gives no opening time for short delay and instantaneous trips (' + fmt(pr.acb.topen * 1000, 0) + ' ms assumed, added to those trips), so check the IZMX40 time-current curves. Tolerances are not applied: long delay times are already the top of the tolerance band, but the pickup (105 to 115 % of Ir, 110 % used) and the other times are nominal.</li>' +
+      '<li><strong>11 kV relays:</strong> the transformer relay and the utility (KenGen) relay use generic settings until the utility confirms its relay and settings. Both follow IEC 60255-151 curves.</li>' +
+      '<li>A fault on the line side of the ACB cannot be cleared by the ACB. It is cleared by the faster of the two 11 kV relays, with the arcing current referred to 11 kV. This is usually the worst case for arc flash.</li>' +
+      '<li>Not covered: earth fault, zone-selective interlocking, maintenance mode, cold-load pick-up, cable damage curves.</li></ul>';
+    return '<details class="card panel" open><summary><span>Protection and fault level (ACB and 11 kV relays)</span>' + badge(allOk, 'GRADED', 'CHECK GRADING') + '</summary>' +
+      '<div class="grid-2"><div>' + levels + '</div><div>' + tccChart(pr) + '</div></div>' + '<h4 style="margin:14px 0 6px">Grading</h4>' + gr + notes + '</details>';
   }
 
   // ---- arc flash (IEEE 1584-2018)
   var arcCache = { key: null, val: null };
   function arcOf(inp) {
+    if (inp.arcSource === 'protection') {
+      var pr = protOf(inp);
+      if (pr.errors.length || !pr.worst) return { errors: pr.errors.length ? pr.errors : ['Check the protection and arc flash inputs.'], warnings: [] };
+      var a0 = pr.worst.arc;
+      return Object.assign({}, a0, { warnings: a0.warnings.concat(pr.warnings), prot: pr, worstCase: pr.worst });
+    }
     var key = JSON.stringify([inp.arcVoc, inp.arcIbf, inp.arcEC, inp.arcGap, inp.arcDist, inp.arcH, inp.arcW, inp.arcDepth, inp.arcTmax, inp.arcTmin, inp.Icw]);
     if (arcCache.key !== key) arcCache = { key: key, val: BC.arcFlash(inp) };
     return arcCache.val;
@@ -381,7 +489,7 @@
     var m = a.main;
     return '<div class="card kpi"><div class="label"><span>Arc flash incident energy</span>' + ppeBadge(m.ppe) + '</div>' +
       '<div class="value">' + fmt(m.cal, 1) + ' <small>cal/cm²</small></div>' +
-      '<div class="sub">At ' + fmt(a.inputs.D) + ' mm · boundary ' + fmt(m.AFB / 1000, 2) + ' m · arc ' + fmt(m.max.Iarc, 1) + ' kA</div></div>';
+      '<div class="sub">' + (a.worstCase ? esc(a.worstCase.loc.name) + ' · ' : '') + 'At ' + fmt(a.inputs.D) + ' mm · boundary ' + fmt(m.AFB / 1000, 2) + ' m · arc ' + fmt(m.max.Iarc, 1) + ' kA</div></div>';
   }
   function arcPanel(r) {
     var inp = r.inputs, a = arcOf(inp);
@@ -390,6 +498,14 @@
         a.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></details>';
     }
     var m = a.main, p = a.inputs, open = a.ec === 'VOA' || a.ec === 'HOA';
+    var cases = '';
+    if (a.prot) {
+      cases = '<h4 style="margin:0 0 6px">Where the arc is and which device clears it</h4><div class="table-scroll"><table class="data"><tr><th>Arc location</th><th class="r">Source</th><th class="r">Fault current</th><th class="r">Arcing current</th><th class="r">Clearing time</th><th class="r">Incident energy</th><th class="r">Boundary</th><th></th></tr>' +
+        a.prot.results.filter(function (x) { return !x.errors.length; }).map(function (x) {
+          var w = a.worstCase === x;
+          return '<tr' + (w ? ' class="highlight"' : '') + '><td>' + esc(x.loc.name) + '<br><span class="muted">cleared by the ' + esc(x.loc.clearedBy) + (w ? ' · worst case' : '') + '</span></td><td class="num">' + esc(x.cs.name) + '</td><td class="num">' + fmt(x.cs.Ibf, 1) + ' kA</td><td class="num">' + fmt(x.arc.main.min.Iarc, 1) + ' to ' + fmt(x.arc.main.max.Iarc, 1) + ' kA</td><td class="num">' + fmt(x.tmin, 0) + ' / ' + fmt(x.tmax, 0) + ' ms</td><td class="num">' + fmt(x.arc.main.cal, 1) + ' cal/cm²</td><td class="num">' + fmt(x.arc.main.AFB, 0) + ' mm</td><td>' + ppeBadge(x.arc.main.ppe) + '</td></tr>';
+        }).join('') + '</table></div><p class="hint muted" style="margin:6px 0 14px">Clearing times are for the minimum / maximum arcing current. Details below are for the worst case.</p>';
+    }
     function scen(label, s) {
       return '<tr><td>' + label + '</td><td class="num">' + fmt(s.Iarc, 2) + ' kA</td><td class="num">' + fmt(s.T, 0) + ' ms</td><td class="num">' + fmt(s.E / 4.184, 2) + ' cal/cm²<br><span class="muted">' + fmt(s.E, 2) + ' J/cm²</span></td><td class="num">' + fmt(s.AFB, 0) + ' mm</td></tr>';
     }
@@ -422,7 +538,7 @@
       '<li>The PPE bands (1.2, 4, 8, 25 and 40 cal/cm²) are those of NFPA 70E. Above 40 cal/cm² no PPE category applies. The result does not replace a site study, protection coordination or the labelling rules.</li></ul>';
     return '<details class="card panel" open><summary><span>Arc flash incident energy (IEEE 1584-2018)</span>' + ppeBadge(m.ppe) + '</summary>' +
       (a.warnings.length ? '<ul class="notes">' + a.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') +
-      '<div class="grid-2"><div>' + left + tt + '</div><div>' + right + '</div></div>' + cmp + notes + '</details>';
+      cases + '<div class="grid-2"><div>' + left + (a.prot ? '' : tt) + '</div><div>' + right + '</div></div>' + cmp + notes + '</details>';
   }
 
   function kpi(label, ok, value, sub, frac) {
@@ -744,8 +860,8 @@
       '<h4>4. Short-circuit thermal</h4><p>Adiabatic heating from the operating temperature θᵢ to θ<sub>f</sub>: <span class="formula">S<sub>min</sub> = I<sub>cw</sub>√t / k</span> with k = K·√ln((θ<sub>f</sub>+β)/(θᵢ+β)), K = √(Q<sub>c</sub>(β+20)/ρ<sub>20</sub>) (IEC 60949). Recommended θ<sub>f</sub>: 200 °C copper, 180 °C aluminium (IEC 60865-1).</p>' +
       '<h4>5. Short-circuit forces (IEC 60865-1 simplified method)</h4><p>i<sub>p</sub> = n·I<sub>cw</sub> with n from IEC 61439-1 Table 7. Centre-phase force F<sub>m3</sub> = (μ₀/2π)(√3/2)i<sub>p</sub>²l/a<sub>m</sub>; sub-conductor force F<sub>s</sub> = (μ₀/2π)(i<sub>p</sub>/n)²lₛ/aₛ. Effective distances a<sub>m</sub>, aₛ are integrated numerically for the actual rectangular sections. Stresses σ<sub>m</sub> = V<sub>σ</sub>V<sub>r</sub>βF<sub>m3</sub>l/(8Z<sub>m</sub>), σₛ = V<sub>σ</sub>V<sub>r</sub>Fₛlₛ/(16Zₛ); require σ<sub>tot</sub> ≤ q·R<sub>p0.2</sub> and σₛ ≤ R<sub>p0.2</sub>. Support force F<sub>d</sub> = V<sub>F</sub>V<sub>r</sub>·α·F<sub>m3</sub>. Natural-frequency (dynamic) reduction factors are not applied (conservative).</p>' +
       '<h4>6. Bolted joints</h4><p>Preload F = (% of proof)·A<sub>s</sub>·R<sub>p</sub> (ISO 898-1 / ISO 3506-1); torque <span class="formula">T = K·F·d</span>. Bolt patterns follow common practice (cf. DIN 43673 / CDA Pub. 22). Checks: mean contact pressure over the overlap and washer bearing pressure vs. the bar\'s 0.2 % proof stress.</p>' +
-      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>9. Arc flash (IEEE 1584-2018)</h4><p>Empirical model for three-phase AC at 208 V to 15 kV. The intermediate arcing current comes from equation 1 for the electrode configuration (VCB, VCBB, HCB, VOA, HOA), gap and bolted fault current; below 600 V the final arcing current follows from equation 25. The minimum arcing current applies the variation factor of Table 2 (equation 2). Incident energy at the working distance uses equations 3 to 6 and the enclosure size correction factor of Tables 6 and 7 (equations 11 to 15). Between 600 V and 14.3 kV the results are interpolated (equations 16 to 24). The arc flash boundary is the distance at which the energy reaches 1.2 cal/cm². The energy is worked out at maximum and minimum arcing current, and the larger value is reported. The model is valid for arcing times the protection can actually deliver and for the ranges listed in the standard; inputs outside those ranges are refused.</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment testing (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
-      '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEEE 1584-2018 — Guide for performing arc-flash hazard calculations. Coefficients checked against the open-source implementation github.com/LiaungYip/arcflash (MIT) and the Annex D examples.</li><li>NFPA 70E — Standard for electrical safety in the workplace (PPE categories).</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
+      '<h4>7. Clearances, creepage and deflection</h4><p>Minimum clearance = IEC 61439-1 Table 1 value for Uimp × altitude factor (IEC 60664-1 Table A.2, 1.00 up to 2000 m). Creepage follows Table 2 (Uᵢ, pollution degree, material group; 660/690 V use the 630 V row) and is never less than the clearance (clause 8.3.3). Per clauses 8.3.1 and 10.11.5.5 a fault must not permanently reduce these distances. The main conductor deflects elastically: δ = Vσ·Vr·k·F<sub>m3</sub>/l·l⁴/(E·I), with k = 5/384 simply supported, 1/384 fixed, 0.00677 for a continuous beam of 3 or more spans. Phase-to-phase clearance is reduced by 2δ, the enclosure distance by δ.</p><h4>8. Busbar support system</h4><p>Bar mass = density × section × number of bars (all poles). The weight per support follows beam theory (m·g·l·α) and the sag is δ = k·w·l⁴/(E·I). The short-circuit load per support F<sub>d</sub> comes from section 5. In a slotted support each bar edge sits in a slot of depth d: the slot wall is a cantilever (bending M = F·d/2 with Z = w·t²/6, shear F/(t·w)) and the body between the phase slots carries F<sub>d</sub>/2 in tension over its remaining thickness. Flat clamp blocks rely on friction: clamp force per bar = F<sub>d</sub>/(2·μ·n). Fixing bolts carry the vector sum of short-circuit force and weight in shear. Thermal movement ΔL = α·L·Δθ. Creepage over ribs follows IEC 61439-1 Annex F (grooves at least X wide, Table F.1; ribs at least 2 mm high).</p><h4>9. Arc flash (IEEE 1584-2018)</h4><p>Empirical model for three-phase AC at 208 V to 15 kV. The intermediate arcing current comes from equation 1 for the electrode configuration (VCB, VCBB, HCB, VOA, HOA), gap and bolted fault current; below 600 V the final arcing current follows from equation 25. The minimum arcing current applies the variation factor of Table 2 (equation 2). Incident energy at the working distance uses equations 3 to 6 and the enclosure size correction factor of Tables 6 and 7 (equations 11 to 15). Between 600 V and 14.3 kV the results are interpolated (equations 16 to 24). The arc flash boundary is the distance at which the energy reaches 1.2 cal/cm². The energy is worked out at maximum and minimum arcing current, and the larger value is reported. The model is valid for arcing times the protection can actually deliver and for the ranges listed in the standard; inputs outside those ranges are refused.</p><h4>10. Protection and arcing time</h4><p>The bolted fault current at the LV terminals is I<sub>k</sub> = I<sub>n,LV</sub> / (z<sub>t</sub> + S<sub>t</sub>/S<sub>k</sub>), with z<sub>t</sub> the transformer impedance, S<sub>t</sub> its rating and S<sub>k</sub> the source fault level. The ACB trips on the first of: instantaneous (I ≥ Ii·In), short delay (I ≥ Isd·Ir, flat or I²t) or long delay (I &gt; 1.1·Ir, t = tr·(6·Ir/I)²); the opening time is added. The 11 kV relays follow IEC 60255-151, t = TMS·k/((I/Is)<sup>α</sup> − 1). The arcing current is first found from IEEE 1584 with a provisional time, the trip time is read at that current, and the incident energy is then recalculated with it. A fault on the busbars is cleared by the ACB; a fault on the ACB line-side terminals is cleared by the faster of the two 11 kV relays at the arcing current divided by the transformer ratio. Trip times use the nominal curves without tolerance. If a device does not trip, the arcing time is taken as 2 s.</p><h4>Not covered</h4><ul><li>Formal IEC 61439-1 design verification (Clause 10.10 temperature rise, 10.11 short-circuit) — this tool supports, but does not replace, it.</li><li>Heat from adjacent devices, solar gain, forced ventilation, harmonic content (use the derating factor), DC systems, neutral/PE sizing, arc-fault containment testing (IEC TR 61641), deformation of the enclosure or barriers, vibration and seismic loads on the supports.</li><li>Plume interaction between phases stacked vertically.</li><li>Each phase pack is treated as one isothermal body: uneven current sharing is included in the phase loss, but the bar carrying the largest share may run a few kelvin hotter than reported.</li></ul>' +
+      '<h4>References</h4><ul><li>IEC 61439-1/-2 — Low-voltage switchgear and controlgear assemblies.</li><li>IEC 60865-1 — Short-circuit currents: calculation of effects.</li><li>IEC 60949 — Thermally permissible short-circuit currents.</li><li>IEEE 1584-2018 — Guide for performing arc-flash hazard calculations. Coefficients checked against the open-source implementation github.com/LiaungYip/arcflash (MIT) and the Annex D examples.</li><li>NFPA 70E — Standard for electrical safety in the workplace (PPE categories).</li><li>IEC 60255-151 — Measuring relays and protection equipment: functional requirements for over/under current protection.</li><li>Eaton PXR 20/25 trip unit manual and time-current curves (characteristic shapes; check the setting ranges against the manual for your breaker).</li><li>IEC TR 60890 — Temperature-rise verification by calculation.</li><li>Copper Development Association Publication 22 — Copper for busbars.</li><li>DIN 43671 (ampacity tables), DIN 43673 (busbar drillings).</li></ul></details>';
   }
 
   function inputsSummary(r) {

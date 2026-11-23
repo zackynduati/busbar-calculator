@@ -16,6 +16,7 @@ It's a static site (HTML/CSS/JavaScript, no build step), so you can host it on G
 | **Insulation coordination** | Uimp, Uᵢ, pollution degree, material group, distance to enclosure, creepage across supports and to earth | Minimum clearance (Table 1, with altitude correction), creepage from Table 2, bar deflection during a fault, clearance and creepage at rest and after the fault |
 | **Busbar support system** | Run length, neutral bars, support type (slotted or flat), slot/wall/body dimensions, ribs, material strengths, fixings, installation temperature | Bar weight and sag, number of supports, short-circuit load per support, slot-wall and body stresses, fixing bolt load, thermal expansion and sliding allowance, creepage over ribs |
 | **Bolted joints** | Bolt size/count (auto from bar width), grade, thread condition (nut factor), preload %, washers, overlap | Preload, **tightening torque**, contact pressure, washer bearing pressure, torque table M6–M20 |
+| **Protection & fault level** | Transformer kVA, voltage and impedance, source fault level (maximum and minimum), ACB trip settings (PXR 20 style long / short / instantaneous), 11 kV transformer relay and utility relay | LV bolted fault current, ACB / relay trip times, grading margins, time-current chart, and the arcing time for the arc flash result at the busbars and at the ACB line side |
 | **Arc flash** (IEEE 1584-2018) | System voltage, bolted fault current, electrode configuration, gap, working distance, enclosure size, arcing time at maximum and minimum current | Arcing current, **incident energy** (cal/cm² and J/cm²) at maximum and minimum current, arc flash boundary, PPE category band, clearing time needed for 1.2 / 4 / 8 cal/cm², comparison of all five electrode configurations |
 | **Section finder** | All of the above | The lightest standard sections (1–4 bars per phase) that pass every check |
 
@@ -58,6 +59,7 @@ index.html              page shell
 css/styles.css          styles (light/dark, responsive, print)
 js/busbar-engine.js     calculation engine (no DOM; also usable from Node)
 js/arcflash.js          IEEE 1584-2018 arc flash model (adds BusbarCalc.arcFlash)
+js/protection.js        fault level, trip curves and grading (adds BusbarCalc.protection)
 js/app.js               form, results rendering, share link, section finder
 tests/index.html        verification checks – open in a browser
 ```

@@ -216,3 +216,12 @@ table.data tr.click:hover td { background: var(--surface-2); }
   details.panel > summary::after { display: none; }
   .print-only { display: block; }
 }
+
+/* time-current chart */
+.tcc { width: 100%; height: auto; display: block; background: var(--surface-2); border-radius: 8px; }
+.tcc text { font: 11px system-ui, sans-serif; fill: var(--muted); }
+.tcc text.tl { fill: var(--text); font-size: 10.5px; }
+.tcc .grid { stroke: var(--border); stroke-width: 1; }
+.tcc-legend { flex-wrap: wrap; gap: 6px 16px; }
+.tcc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tcc-legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; }
