@@ -234,3 +234,7 @@ table.data tr.click:hover td { background: var(--surface-2); }
 .barrow .track { position: relative; height: 12px; background: var(--bar-track); border-radius: 4px; }
 .barrow .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 0 4px 4px 0; min-width: 2px; }
 .barrow .fill.over { background: var(--bad); }
+
+/* footer credit */
+.foot .byline { margin-top: 10px; text-align: center; font-size: 13px; color: var(--muted); letter-spacing: .02em; }
+.foot .byline strong { color: var(--text); font-weight: 600; }
